@@ -22,7 +22,9 @@ jobs:
   Test-and-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+           lfs: true
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -33,7 +35,7 @@ jobs:
       - name: List
         run: find ./
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo run --release -- --test
       - name: Run fmt
         run: cargo fmt --all --check
       - name: Run clippy
@@ -46,8 +48,8 @@ jobs:
         include:
           - TARGET: x86_64-unknown-linux-gnu
             OS: ubuntu-latest
-          - TARGET: aarch64-unknown-linux-gnu
-            OS: ubuntu-latest
+          # - TARGET: aarch64-unknown-linux-gnu # TODO(xnorpx): crosscompile is broken due to open-ssl
+          #   OS: ubuntu-latest
           - TARGET: x86_64-apple-darwin
             OS: macos-latest
           - TARGET: aarch64-apple-darwin
@@ -59,11 +61,13 @@ jobs:
     needs: Test-and-lint
     runs-on: ${{ matrix.OS }}
     env:
-      NAME: blue-candle # change with the name of your project
+      NAME: blue-candle
       TARGET: ${{ matrix.TARGET }}
       OS: ${{ matrix.OS }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+           lfs: true
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -88,7 +92,7 @@ jobs:
       - name: Install rust target
         run: rustup target add $TARGET
       - name: Run build
-        run: cargo build --release --verbose --target $TARGET
+        run: cargo build --release --target $TARGET
       - name: List target
         run: find ./target
       - name: Compress
@@ -128,6 +132,6 @@ jobs:
       - name: List
         run: find ./artifacts
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           files: ./artifacts/*.tar.gz
