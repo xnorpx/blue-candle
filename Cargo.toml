@@ -5,4 +5,30 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+
 [dependencies]
+
+anyhow = "1"
+axum = { version = "0", features = ["multipart"] }
+candle-core = "0"
+candle-examples = "0"
+candle-nn = "0"
+candle-transformers = "0"
+clap = { version = "4", features = ["derive"] }
+hf-hub = { version = "0", features = ["tokio"] }
+image = "0"
+imageproc = "0"
+rusttype = "0"
+serde = "1"
+tokio = { version = "1", features = [
+    "fs",
+    "io-util",
+    "macros",
+    "rt-multi-thread",
+] }
+tracing = "0"
+tracing-subscriber = "0"
+uuid = { version = "1", features = ["v4"] }
