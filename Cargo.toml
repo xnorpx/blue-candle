@@ -6,9 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+mkl = [
+    "dep:intel-mkl-src",
+    "candle-core/mkl",
+    "candle-nn/mkl",
+    "candle-transformers/mkl",
+]
+
 default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
-
 [dependencies]
 
 anyhow = "1"
@@ -18,9 +24,12 @@ candle-examples = "0"
 candle-nn = "0"
 candle-transformers = "0"
 clap = { version = "4", features = ["derive"] }
+futures = "0"
+intel-mkl-src = { version = "0", optional = true }
 hf-hub = { version = "0", features = ["tokio"] }
 image = "0"
 imageproc = "0"
+reqwest = { version = "0", features = ["stream", "multipart", "json"] }
 rusttype = "0"
 serde = "1"
 tokio = { version = "1", features = [
@@ -29,6 +38,7 @@ tokio = { version = "1", features = [
     "macros",
     "rt-multi-thread",
 ] }
+tokio-util = { version = "0", features = ["codec"] }
 tracing = "0"
 tracing-subscriber = "0"
 uuid = { version = "1", features = ["v4"] }

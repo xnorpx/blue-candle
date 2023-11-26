@@ -1,6 +1,9 @@
 use crate::model::{Multiples, YoloV8};
 use anyhow::{anyhow, bail};
-use candle::{utils::cuda_is_available, DType, Device, IndexOp, Tensor};
+use candle::{
+    utils::{cuda_is_available, has_mkl, with_avx, with_f16c},
+    DType, Device, IndexOp, Tensor,
+};
 use candle_core as candle;
 use candle_nn::{Module, VarBuilder};
 use candle_transformers::object_detection::{non_maximum_suppression, Bbox, KeyPoint};
@@ -9,16 +12,16 @@ use std::{io::Cursor, time::Instant};
 use tracing::{debug, info};
 
 // For testing
-pub(crate) static BIKE_IMAGE_BYTES: &[u8] = include_bytes!("../assets/crossing.jpg");
+pub static BIKE_IMAGE_BYTES: &[u8] = include_bytes!("../assets/crossing.jpg");
 
 // Include a default model
 static DEFAULT_MODEL: &[u8] = include_bytes!("../models/yolov8n.safetensors");
 static DEFAULT_MODEL_MULTIPLES: Multiples = Multiples::n();
 
-pub(crate) type Bboxes = Vec<Vec<Bbox<Vec<KeyPoint>>>>;
+pub type Bboxes = Vec<Vec<Bbox<Vec<KeyPoint>>>>;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Detector {
+pub struct Detector {
     device: Device,
     model: YoloV8,
     confidence_threshold: f32,
@@ -28,7 +31,7 @@ pub(crate) struct Detector {
 }
 
 impl Detector {
-    pub(crate) fn new(
+    pub fn new(
         force_cpu: bool,
         model: Option<String>,
         confidence_threshold: f32,
@@ -40,7 +43,12 @@ impl Detector {
             info!("Detector is initialized for GPU");
             Device::new_cuda(0)?
         } else {
-            info!("Detector is initialized for CPU");
+            info!(
+                "Detector is initialized for CPU with mkl: {:?}, with avx: {:?} with f16c: {:?}",
+                has_mkl(),
+                with_avx(),
+                with_f16c()
+            );
             Device::Cpu
         };
 
@@ -68,7 +76,7 @@ impl Detector {
         })
     }
 
-    pub(crate) fn test_detection(&self) -> anyhow::Result<(Bboxes, f32, f32)> {
+    pub fn test_detection(&self) -> anyhow::Result<(Bboxes, f32, f32)> {
         info!("Test detection");
         let start_detection_time = Instant::now();
         let reader = Reader::new(Cursor::new(BIKE_IMAGE_BYTES))
@@ -85,10 +93,7 @@ impl Detector {
         Ok(bboxes)
     }
 
-    pub(crate) fn detect(
-        &self,
-        reader: Reader<Cursor<&[u8]>>,
-    ) -> anyhow::Result<(Bboxes, f32, f32)> {
+    pub fn detect(&self, reader: Reader<Cursor<&[u8]>>) -> anyhow::Result<(Bboxes, f32, f32)> {
         let start_detection_time = Instant::now();
         let res = self.detect_inner(reader)?;
         debug!(
