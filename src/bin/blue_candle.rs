@@ -8,13 +8,12 @@ use axum::{
 };
 use blue_candle::{
     api::{Prediction, VisionDetectionRequest, VisionDetectionResponse},
-    detector::{Detector, BIKE_IMAGE_BYTES},
+    coco_classes,
+    detector::{Bbox, Detector, KeyPoint, BIKE_IMAGE_BYTES},
     utils::{download_models, ensure_directory_exists, img_with_bbox, read_jpeg_file, save_image},
 };
 use candle::utils::cuda_is_available;
 use candle_core as candle;
-use candle_examples::coco_classes;
-use candle_transformers::object_detection::{Bbox, KeyPoint};
 use clap::Parser;
 use image::io::Reader;
 use std::{
@@ -40,7 +39,7 @@ pub struct Args {
     /// The port on which the server will listen for HTTP requests.
     /// Default is 32168. Example usage: --port 8080
     //#[arg(long, default_value_t = 32168)]
-    #[arg(long, default_value_t = 1337)]
+    #[arg(long, default_value_t = 32168)]
     pub port: u16,
 
     /// Forces the application to use the CPU for computations, even if a GPU is available.
