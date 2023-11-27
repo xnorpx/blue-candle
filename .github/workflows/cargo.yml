@@ -23,8 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-           lfs: true
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -66,8 +64,6 @@ jobs:
       OS: ${{ matrix.OS }}
     steps:
       - uses: actions/checkout@v4
-        with:
-           lfs: true
       - name: Cargo cache
         uses: actions/cache@v3
         with:
