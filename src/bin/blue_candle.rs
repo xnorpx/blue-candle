@@ -143,9 +143,8 @@ async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
 
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), args.port);
     info!("Starting server, listening on {}", addr);
-    axum::Server::bind(&addr)
-        .serve(blue_candle.into_make_service())
-        .await?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, blue_candle.into_make_service()).await?;
 
     Ok(())
 }
