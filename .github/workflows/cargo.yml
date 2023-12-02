@@ -1,10 +1,15 @@
-name: Blue Candle CI
-
+name: ci
 on:
-  push:
   pull_request:
+  push:
+    branches:
+    - master
   schedule:
-    - cron: "22 3 * * 5"
+  - cron: '00 01 * * *'
+
+permissions:
+  # to fetch code (actions/checkout)
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,79 +18,155 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
-defaults:
-  run:
-    # necessary for windows
-    shell: bash
 
+
+# Compute capability: https://developer.nvidia.com/cuda-gpus
 jobs:
-  Test-and-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cargo cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ./target
-          key: test-cargo-registry
-      - name: List
-        run: find ./
-      - name: Run tests
-        run: cargo run --release --bin blue_candle -- --test
-      - name: Run fmt
-        run: cargo fmt --all --check
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-  build:
+  build-cuda:
+    name: build-cuda
+    env:
+      RUST_BACKTRACE: 1
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - TARGET: x86_64-unknown-linux-gnu
-            OS: ubuntu-latest
-          # - TARGET: aarch64-unknown-linux-gnu # TODO(xnorpx): crosscompile is broken due to open-ssl
-          #   OS: ubuntu-latest
-          - TARGET: x86_64-apple-darwin
-            OS: macos-latest
-          - TARGET: aarch64-apple-darwin
-            OS: macos-latest
-          - TARGET: x86_64-pc-windows-msvc
-            OS: windows-latest
-          - TARGET: aarch64-pc-windows-msvc
-            OS: windows-latest
-    needs: Test-and-lint
-    runs-on: ${{ matrix.OS }}
-    env:
-      NAME: blue-candle
-      TARGET: ${{ matrix.TARGET }}
-      OS: ${{ matrix.OS }}
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          computecap: 61
+        - build: win
+          os: windows-latest
+          rust: stable
+          computecap: 61
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          computecap: 75
+        - build: win
+          os: windows-latest
+          rust: stable
+          computecap: 75
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          computecap: 86
+        - build: win
+          os: windows-latest
+          rust: stable
+          computecap: 86
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          computecap: 89
+        - build: win
+          os: windows-latest
+          rust: stable
+          computecap: 89
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Cargo cache
-        uses: actions/cache@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+
+    - name: Configure build for amd64
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: amd64
+
+    - uses: Jimver/cuda-toolkit@v0.2.11
+      id: cuda-toolkit
+      with:
+        cuda: '12.1.0'
+        method: 'network'
+        sub-packages: '[]'
+        non-cuda-sub-packages: '["libcublas"]'
+
+    - name: Build release blue-candle
+      run: cargo build --release --features cuda
+      env:
+        CUDA_COMPUTE_CAP: ${{ matrix.computecap }}
+
+  build-test-cpu:
+    name: build-test-cpu
+    env:
+      RUST_BACKTRACE: 1
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - build: beta
+          os: ubuntu-latest
+          rust: beta
+        - build: nightly
+          os: ubuntu-latest
+          rust: nightly
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+        - build: macos
+          os: macos-latest
+          rust: stable
+        - build: win
+          os: windows-latest
+          rust: stable
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+
+    - name: Build debug blue-candle
+      run: cargo build
+
+    - name: Run test with release
+      run: cargo run --release --bin blue_candle -- --test
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        components: rustfmt
+    - name: Check formatting
+      run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        components: clippy
+    - name: Check clippy
+      run: cargo clippy --all-targets -- -D warnings
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          path: |
-            ~/.cargo/registry
-            ./target
-          key: build-cargo-registry-${{matrix.TARGET}}
-      - name: List
-        run: find ./
-      - name: Install and configure dependencies
-        run: |
-          # dependencies are only needed on ubuntu as that's the only place where
-          # we make cross-compilation
-          if [[ $OS =~ ^ubuntu.*$ ]]; then
-            sudo apt-get install -qq crossbuild-essential-arm64 crossbuild-essential-armhf
-          fi
-          # some additional configuration for cross-compilation on linux
-          cat >>~/.cargo/config <<EOF
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          EOF
-      - name: Install rust target
-        run: rustup target add $TARGET
-      - name: Run build
-        run: cargo build --release --target $TARGET
+          toolchain: stable
+      - name: Check documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --document-private-items --workspace
