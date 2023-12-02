@@ -18,8 +18,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
-
-
 # Compute capability: https://developer.nvidia.com/cuda-gpus
 jobs:
   build-cuda:
@@ -28,7 +26,7 @@ jobs:
       RUST_BACKTRACE: 1
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
         - build: linux
