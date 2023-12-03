@@ -9,7 +9,7 @@ use axum::{
 use blue_candle::{
     api::{Prediction, VisionDetectionRequest, VisionDetectionResponse},
     coco_classes,
-    detector::{Bbox, Detector, KeyPoint, BIKE_IMAGE_BYTES},
+    detector::{Bbox, Detector, InferenceTime, KeyPoint, ProcessingTime, BIKE_IMAGE_BYTES},
     utils::{download_models, ensure_directory_exists, img_with_bbox, read_jpeg_file, save_image},
 };
 use candle::utils::cuda_is_available;
@@ -131,7 +131,11 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
-    detector.test_detection()?;
+    let (_, inference_time, processing_time) = detector.test_detection()?;
+    info!(
+        "Server inference startup test, processing time: {:#?}, inference time: {:#?}",
+        processing_time, inference_time
+    );
 
     let detector = Arc::new(detector);
 
@@ -149,10 +153,10 @@ async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
 }
 
 async fn v1_vision_detection(
-    State(state): State<Arc<Detector>>,
+    State(detector): State<Arc<Detector>>,
     mut multipart: Multipart, // Note multipart needs to be last
 ) -> Result<Json<VisionDetectionResponse>, BlueCandleError> {
-    let process_start = Instant::now();
+    let request_start_time = Instant::now();
     let mut vision_request = VisionDetectionRequest::default();
 
     while let Some(field) = multipart.next_field().await? {
@@ -164,8 +168,7 @@ async fn v1_vision_detection(
                 if let Some(image_name) = field.file_name().map(|s| s.to_string()) {
                     vision_request.image_name = image_name;
                 }
-                vision_request.image_data = field.bytes().await.unwrap();
-                //vision_request.image_data = field.bytes().await?;
+                vision_request.image_data = field.bytes().await?;
             }
             Some(&_) => {}
             None => {}
@@ -173,26 +176,28 @@ async fn v1_vision_detection(
     }
 
     let image_ref = vision_request.image_data.clone();
-    let state2 = state.clone();
+    let state2 = detector.clone();
     // Detection will be slow, (100ms+) so we spawn a blocking task.
-    let predictions = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Prediction>> {
-        let reader = Reader::new(Cursor::new(image_ref.as_ref()))
-            .with_guessed_format()
-            .expect("Cursor io never fails");
-        let bboxes = state2.detect(reader)?;
+    let (predictions, inference_time, processing_time) = tokio::task::spawn_blocking(
+        move || -> anyhow::Result<(Vec<Prediction>, InferenceTime, ProcessingTime)> {
+            let reader = Reader::new(Cursor::new(image_ref.as_ref()))
+                .with_guessed_format()
+                .expect("Cursor io never fails");
+            let (bboxes, inference_time, processing_time) = state2.detect(reader)?;
 
-        let predictions = from_bbox_to_predictions(
-            bboxes,
-            vision_request.min_confidence,
-            &coco_classes::NAMES,
-            state2.labels(),
-        );
-        Ok(predictions)
-    })
+            let predictions = from_bbox_to_predictions(
+                bboxes,
+                vision_request.min_confidence,
+                &coco_classes::NAMES,
+                state2.labels(),
+            );
+            Ok((predictions, inference_time, processing_time))
+        },
+    )
     .await??;
 
     if !predictions.is_empty() {
-        if let Some(image_path) = state.image_path() {
+        if let Some(image_path) = detector.image_path() {
             let reader = Reader::new(Cursor::new(vision_request.image_data.as_ref()))
                 .with_guessed_format()
                 .expect("Cursor io never fails");
@@ -203,9 +208,13 @@ async fn v1_vision_detection(
         }
     }
 
-    let process_time = Instant::now().duration_since(process_start);
-
+    let request_time = Instant::now().duration_since(request_start_time);
     let count = predictions.len() as i32;
+
+    info!(
+        "Request time {:#?}, processing time: {:#?}, inference time: {:#?}",
+        request_time, processing_time, inference_time
+    );
 
     let response = VisionDetectionResponse {
         success: true,
@@ -215,12 +224,15 @@ async fn v1_vision_detection(
         count,
         command: "detect".into(),
         module_id: "Yolo8".into(),
-        execution_provider: "TODO".into(),
+        execution_provider: if detector.is_gpu() {
+            "GPU".to_string()
+        } else {
+            "CPU".to_string()
+        },
         can_useGPU: cuda_is_available(),
-        // TODO(xnorpx): measure different times
-        inference_ms: process_time.as_millis() as i32,
-        process_ms: process_time.as_millis() as i32,
-        analysis_round_trip_ms: process_time.as_millis() as i32,
+        inference_ms: inference_time.as_millis() as i32,
+        process_ms: processing_time.as_millis() as i32,
+        analysis_round_trip_ms: request_time.as_millis() as i32,
     };
     Ok(Json(response))
 }
@@ -303,13 +315,14 @@ pub fn from_bbox_to_predictions(
 }
 
 async fn test_image(image: String, args: Args, detector: Detector) -> anyhow::Result<()> {
+    let start_test_time = Instant::now();
     let contents = read_jpeg_file(image.clone()).await?;
 
     let reader = Reader::new(Cursor::new(contents.as_ref()))
         .with_guessed_format()
         .expect("Cursor io never fails");
 
-    let bboxes = detector.detect(reader)?;
+    let (bboxes, inference_time, processing_time) = detector.detect(reader)?;
 
     let predictions =
         from_bbox_to_predictions(bboxes, 0.5, &coco_classes::NAMES, detector.labels());
@@ -320,12 +333,19 @@ async fn test_image(image: String, args: Args, detector: Detector) -> anyhow::Re
     let img = img_with_bbox(predictions, reader, args.legend_size)?;
 
     save_image(img, image, "-od").await?;
+    let test_time = Instant::now().duration_since(start_test_time);
+
+    info!(
+        "Tested image in {:#?}, processing time: {:#?}, inference time: {:#?}",
+        test_time, processing_time, inference_time
+    );
 
     Ok(())
 }
 
 async fn test(detector: Detector, args: Args) -> anyhow::Result<()> {
-    let bboxes = detector.test_detection()?;
+    let start_test_time = Instant::now();
+    let (bboxes, inference_time, processing_time) = detector.test_detection()?;
     let predictions = from_bbox_to_predictions(
         bboxes,
         args.confidence_threshold,
@@ -338,5 +358,11 @@ async fn test(detector: Detector, args: Args) -> anyhow::Result<()> {
     let img = img_with_bbox(predictions.clone(), reader, 30)?;
     // The api doesn't provide a source id or a source name so we just generate a uuid here.
     save_image(img, "test.jpg".into(), "").await?;
+    let test_time = Instant::now().duration_since(start_test_time);
+
+    info!(
+        "Tested image in {:#?}, processing time: {:#?}, inference time: {:#?}",
+        test_time, processing_time, inference_time
+    );
     Ok(())
 }
