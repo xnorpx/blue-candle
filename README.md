@@ -1,6 +1,6 @@
 # Blue Candle
 
-**Object detection service**
+**Object detection service, portable, one file less than 20 MB in size**
 ![Blue Candle Logo](assets/blue-candle.png)
 
 ---
