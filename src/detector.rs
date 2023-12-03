@@ -7,8 +7,11 @@ use candle::{
 use candle_core as candle;
 use candle_nn::{Module, VarBuilder};
 use image::{io::Reader, ImageFormat};
-use std::{io::Cursor, time::Instant};
-use tracing::{debug, info};
+use std::{
+    io::Cursor,
+    time::{Duration, Instant},
+};
+use tracing::info;
 
 // For testing
 pub static BIKE_IMAGE_BYTES: &[u8] = include_bytes!("../assets/crossing.jpg");
@@ -18,6 +21,8 @@ static DEFAULT_MODEL: &[u8] = include_bytes!("../models/yolov8n.safetensors");
 static DEFAULT_MODEL_MULTIPLES: Multiples = Multiples::n();
 
 pub type Bboxes = Vec<Vec<Bbox<Vec<KeyPoint>>>>;
+pub type ProcessingTime = Duration;
+pub type InferenceTime = Duration;
 
 #[derive(Clone, Debug)]
 pub struct Detector {
@@ -27,6 +32,7 @@ pub struct Detector {
     nms_threshold: f32,
     labels: Vec<String>,
     image_path: Option<String>,
+    gpu: bool,
 }
 
 impl Detector {
@@ -38,9 +44,9 @@ impl Detector {
         labels: Vec<String>,
         image_path: Option<String>,
     ) -> anyhow::Result<Self> {
-        let device = if !force_cpu && cuda_is_available() {
+        let (device, gpu) = if !force_cpu && cuda_is_available() {
             info!("Detector is initialized for GPU");
-            Device::new_cuda(0)?
+            (Device::new_cuda(0)?, true)
         } else {
             info!(
                 "Detector is initialized for CPU with mkl: {:?}, with avx: {:?} with f16c: {:?}",
@@ -48,7 +54,7 @@ impl Detector {
                 with_avx(),
                 with_f16c()
             );
-            Device::Cpu
+            (Device::Cpu, false)
         };
 
         let (vb, multiples) = if let Some(model) = model {
@@ -72,37 +78,44 @@ impl Detector {
             device,
             labels,
             image_path,
+            gpu,
         })
     }
 
-    pub fn test_detection(&self) -> anyhow::Result<(Bboxes, f32, f32)> {
+    pub fn is_gpu(&self) -> bool {
+        self.gpu
+    }
+
+    pub fn test_detection(
+        &self,
+    ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime, ProcessingTime)> {
         info!("Test detection");
-        let start_detection_time = Instant::now();
+        let start_processing_time = Instant::now();
         let reader = Reader::new(Cursor::new(BIKE_IMAGE_BYTES))
             .with_guessed_format()
             .expect("Cursor io never fails");
-        let bboxes = self.detect_inner(reader)?;
+        let (bboxes, inference_time) = self.detect_inner(reader)?;
         if bboxes.0.is_empty() {
             bail!("Detection failed");
         }
-        info!(
-            "Detection succeeded in: {:#?}",
-            Instant::now().duration_since(start_detection_time)
-        );
-        Ok(bboxes)
+        let processing_time = Instant::now().duration_since(start_processing_time);
+        Ok((bboxes, inference_time, processing_time))
     }
 
-    pub fn detect(&self, reader: Reader<Cursor<&[u8]>>) -> anyhow::Result<(Bboxes, f32, f32)> {
-        let start_detection_time = Instant::now();
-        let res = self.detect_inner(reader)?;
-        debug!(
-            "Detection succeeded in: {:#?}",
-            Instant::now().duration_since(start_detection_time)
-        );
-        Ok(res)
+    pub fn detect(
+        &self,
+        reader: Reader<Cursor<&[u8]>>,
+    ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime, ProcessingTime)> {
+        let start_processing_time = Instant::now();
+        let (bboxes, inference_time) = self.detect_inner(reader)?;
+        let processing_time = Instant::now().duration_since(start_processing_time);
+        Ok((bboxes, inference_time, processing_time))
     }
 
-    fn detect_inner(&self, reader: Reader<Cursor<&[u8]>>) -> anyhow::Result<(Bboxes, f32, f32)> {
+    fn detect_inner(
+        &self,
+        reader: Reader<Cursor<&[u8]>>,
+    ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime)> {
         assert_eq!(reader.format(), Some(ImageFormat::Jpeg));
         let original_image = reader.decode().map_err(candle::Error::wrap)?;
 
@@ -134,12 +147,17 @@ impl Detector {
             .permute((2, 0, 1))?
         };
         let image_t = (image_t.unsqueeze(0)?.to_dtype(DType::F32)? * (1. / 255.))?;
+        let start_inference_time = Instant::now();
         let pred = self.model.forward(&image_t)?.squeeze(0)?;
+        let inference_duration = Instant::now().duration_since(start_inference_time);
         let bboxes = from_tensor_to_bbox(&pred, self.confidence_threshold, self.nms_threshold)?;
         Ok((
-            bboxes,
-            (w as f32 / width as f32),
-            (h as f32 / height as f32),
+            (
+                bboxes,
+                (w as f32 / width as f32),
+                (h as f32 / height as f32),
+            ),
+            inference_duration,
         ))
     }
 
