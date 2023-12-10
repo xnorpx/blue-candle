@@ -1,6 +1,6 @@
 [package]
 name = "blue-candle"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -10,13 +10,14 @@ mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl"]
 
 default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
-[dependencies]
 
+[dependencies]
 anyhow = "1"
 axum = { version = "0", features = ["multipart"] }
 candle-core = "0"
 candle-nn = "0"
 clap = { version = "4", features = ["derive"] }
+fast_image_resize = "*"
 futures = "0"
 intel-mkl-src = { version = "0", optional = true }
 hf-hub = { version = "0", features = ["tokio"] }
@@ -35,7 +36,5 @@ tokio-util = { version = "0", features = ["codec"] }
 tracing = "0"
 tracing-subscriber = "0"
 uuid = { version = "1", features = ["v4"] }
-
 zune-jpeg = "*"
 zune-core = "*"
-fast_image_resize = "*"
