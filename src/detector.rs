@@ -6,12 +6,15 @@ use candle::{
 };
 use candle_core as candle;
 use candle_nn::{Module, VarBuilder};
-use image::{io::Reader, ImageFormat};
+use fast_image_resize::{Image, PixelType, Resizer};
 use std::{
-    io::Cursor,
+    num::NonZeroU32,
     time::{Duration, Instant},
 };
-use tracing::info;
+use tracing::{debug, info};
+use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::JpegDecoder;
 
 // For testing
 pub static BIKE_IMAGE_BYTES: &[u8] = include_bytes!("../assets/crossing.jpg");
@@ -91,10 +94,7 @@ impl Detector {
     ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime, ProcessingTime)> {
         info!("Test detection");
         let start_processing_time = Instant::now();
-        let reader = Reader::new(Cursor::new(BIKE_IMAGE_BYTES))
-            .with_guessed_format()
-            .expect("Cursor io never fails");
-        let (bboxes, inference_time) = self.detect_inner(reader)?;
+        let (bboxes, inference_time) = self.detect_inner(BIKE_IMAGE_BYTES)?;
         if bboxes.0.is_empty() {
             bail!("Detection failed");
         }
@@ -104,23 +104,28 @@ impl Detector {
 
     pub fn detect(
         &self,
-        reader: Reader<Cursor<&[u8]>>,
+        buf: &[u8],
     ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime, ProcessingTime)> {
         let start_processing_time = Instant::now();
-        let (bboxes, inference_time) = self.detect_inner(reader)?;
+        let (bboxes, inference_time) = self.detect_inner(buf)?;
         let processing_time = Instant::now().duration_since(start_processing_time);
         Ok((bboxes, inference_time, processing_time))
     }
 
-    fn detect_inner(
-        &self,
-        reader: Reader<Cursor<&[u8]>>,
-    ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime)> {
-        assert_eq!(reader.format(), Some(ImageFormat::Jpeg));
-        let original_image = reader.decode().map_err(candle::Error::wrap)?;
+    fn detect_inner(&self, buf: &[u8]) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime)> {
+        let options = DecoderOptions::default()
+            .set_strict_mode(true)
+            .set_use_unsafe(true)
+            .jpeg_set_out_colorspace(ColorSpace::RGB);
 
-        let w = original_image.width() as usize;
-        let h = original_image.height() as usize;
+        let mut decoder = JpegDecoder::new_with_options(buf, options);
+        let decode_image_start_time = Instant::now();
+        let pixels = decoder.decode()?;
+        let decode_image_time = Instant::now().duration_since(decode_image_start_time);
+        debug!("Decode image time: {:#?}", decode_image_time);
+        let (w, h) = decoder
+            .dimensions()
+            .expect("The image should have been encoded?");
 
         let (width, height) = {
             if w < h {
@@ -132,19 +137,38 @@ impl Detector {
                 (640, h / 32 * 32)
             }
         };
+
         let image_t = {
-            let img = original_image.resize_exact(
-                width as u32,
-                height as u32,
-                image::imageops::FilterType::CatmullRom,
+            let resize_image_start_time = Instant::now();
+            let src_image = Image::from_vec_u8(
+                NonZeroU32::new(w as u32).ok_or_else(|| anyhow!("Width is not larger than 0"))?,
+                NonZeroU32::new(h as u32).ok_or_else(|| anyhow!("Height is not larger than 0"))?,
+                pixels,
+                PixelType::U8x3,
+            )?;
+
+            let mut dst_image = Image::new(
+                NonZeroU32::new(width as u32)
+                    .ok_or_else(|| anyhow!("Width is not larger than 0"))?,
+                NonZeroU32::new(height as u32)
+                    .ok_or_else(|| anyhow!("Height is not larger than 0"))?,
+                PixelType::U8x3,
             );
-            let data = img.to_rgb8().into_raw();
-            Tensor::from_vec(
-                data,
-                (img.height() as usize, img.width() as usize, 3),
-                &self.device,
-            )?
-            .permute((2, 0, 1))?
+
+            let mut resizer = Resizer::new(fast_image_resize::ResizeAlg::Convolution(
+                fast_image_resize::FilterType::Bilinear,
+            ));
+
+            resizer.resize(&src_image.view(), &mut dst_image.view_mut())?;
+            let resize_image_time = Instant::now().duration_since(resize_image_start_time);
+            debug!("Resize image time: {:#?}", resize_image_time);
+            let data = dst_image.into_vec();
+            let to_tensor_start_time = Instant::now();
+            let image_t =
+                Tensor::from_vec(data, (height, width, 3), &self.device)?.permute((2, 0, 1))?;
+            let to_tensor_time = Instant::now().duration_since(to_tensor_start_time);
+            debug!("To tensor time: {:#?}", to_tensor_time);
+            image_t
         };
         let image_t = (image_t.unsqueeze(0)?.to_dtype(DType::F32)? * (1. / 255.))?;
         let start_inference_time = Instant::now();
@@ -175,7 +199,12 @@ pub fn from_tensor_to_bbox(
     confidence_threshold: f32,
     nms_threshold: f32,
 ) -> anyhow::Result<Vec<Vec<Bbox<Vec<KeyPoint>>>>> {
+    let from_tensor_start_time = Instant::now();
     let pred = pred.to_device(&Device::Cpu)?;
+    let from_tensor_time = Instant::now().duration_since(from_tensor_start_time);
+    debug!("From tensor time: {:#?}", from_tensor_time);
+
+    let bb_start_time = Instant::now();
     let (pred_size, npreds) = pred.dims2()?;
     let nclasses = pred_size - 4;
     // The bounding boxes grouped by (maximum) class index.
@@ -207,8 +236,14 @@ pub fn from_tensor_to_bbox(
             }
         }
     }
+    let bb_time = Instant::now().duration_since(bb_start_time);
+    debug!("BB time: {:#?}", bb_time);
 
+    let non_maximum_suppression_start_time = Instant::now();
     non_maximum_suppression(&mut bboxes, nms_threshold);
+    let non_maximum_suppression_time =
+        Instant::now().duration_since(non_maximum_suppression_start_time);
+    debug!("NMS time: {:#?}", non_maximum_suppression_time);
     Ok(bboxes)
 }
 

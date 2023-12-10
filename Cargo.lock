@@ -253,6 +253,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "clap",
+ "fast_image_resize",
  "futures",
  "hf-hub",
  "image",
@@ -266,6 +267,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -737,6 +740,16 @@ dependencies = [
  "rayon-core",
  "smallvec",
  "zune-inflate",
+]
+
+[[package]]
+name = "fast_image_resize"
+version = "2.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc789a40040e11bbe4ba31ca319406805a12fe3f8d71314bbc4bd076602ad55a"
+dependencies = [
+ "num-traits",
+ "thiserror",
 ]
 
 [[package]]
@@ -3464,10 +3477,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "zune-core"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aae122f32a8e2a653acb430c9af5e79e7056c519fa8bac46e51e670868e5c0f2"
+
+[[package]]
 name = "zune-inflate"
 version = "0.2.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "zune-jpeg"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec866b44a2a1fd6133d363f073ca1b179f438f99e7e5bfb1e33f7181facfe448"
+dependencies = [
+ "zune-core",
 ]

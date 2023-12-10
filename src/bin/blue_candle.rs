@@ -175,15 +175,13 @@ async fn v1_vision_detection(
         }
     }
 
-    let image_ref = vision_request.image_data.clone();
+    let image_data = vision_request.image_data.clone();
     let state2 = detector.clone();
     // Detection will be slow, (100ms+) so we spawn a blocking task.
     let (predictions, inference_time, processing_time) = tokio::task::spawn_blocking(
         move || -> anyhow::Result<(Vec<Prediction>, InferenceTime, ProcessingTime)> {
-            let reader = Reader::new(Cursor::new(image_ref.as_ref()))
-                .with_guessed_format()
-                .expect("Cursor io never fails");
-            let (bboxes, inference_time, processing_time) = state2.detect(reader)?;
+            let (bboxes, inference_time, processing_time) =
+                state2.detect(image_data.as_ref()).unwrap();
 
             let predictions = from_bbox_to_predictions(
                 bboxes,
@@ -191,6 +189,7 @@ async fn v1_vision_detection(
                 &coco_classes::NAMES,
                 state2.labels(),
             );
+
             Ok((predictions, inference_time, processing_time))
         },
     )
@@ -211,9 +210,11 @@ async fn v1_vision_detection(
     let request_time = Instant::now().duration_since(request_start_time);
     let count = predictions.len() as i32;
 
+    let image = vision_request.image_name.split('.').next().unwrap_or("");
+
     info!(
-        "Request time {:#?}, processing time: {:#?}, inference time: {:#?}",
-        request_time, processing_time, inference_time
+        "Image: {}, request time {:#?}, processing time: {:#?}, inference time: {:#?}",
+        image, request_time, processing_time, inference_time
     );
 
     let response = VisionDetectionResponse {
@@ -318,11 +319,7 @@ async fn test_image(image: String, args: Args, detector: Detector) -> anyhow::Re
     let start_test_time = Instant::now();
     let contents = read_jpeg_file(image.clone()).await?;
 
-    let reader = Reader::new(Cursor::new(contents.as_ref()))
-        .with_guessed_format()
-        .expect("Cursor io never fails");
-
-    let (bboxes, inference_time, processing_time) = detector.detect(reader)?;
+    let (bboxes, inference_time, processing_time) = detector.detect(&contents)?;
 
     let predictions =
         from_bbox_to_predictions(bboxes, 0.5, &coco_classes::NAMES, detector.labels());
