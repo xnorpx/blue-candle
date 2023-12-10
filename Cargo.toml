@@ -35,3 +35,7 @@ tokio-util = { version = "0", features = ["codec"] }
 tracing = "0"
 tracing-subscriber = "0"
 uuid = { version = "1", features = ["v4"] }
+
+zune-jpeg = "*"
+zune-core = "*"
+fast_image_resize = "*"
