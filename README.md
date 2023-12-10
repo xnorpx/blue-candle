@@ -1,22 +1,16 @@
 # Blue Candle
 
-**Object detection service, portable, one file less than 20 MB in size**
-![Blue Candle Logo](assets/blue-candle.png)
+## TL;DR
+
+- Object detection service
+- [Yolo8](https://github.com/ultralytics/ultralytics) inference implementation
+- One small binary < 20 MB with one built in model.
+- Dockerless
+- [Blue Iris](https://blueirissoftware.com/) API compatible.
 
 ---
 
-## TL;DR
-
-- [Blue Iris](https://blueirissoftware.com/) compatible.
-- Dockerless
-- Cuda support
-- Simple to use
-- Written in Rust
-- Supports Windows
-- Built-in small [Yolo8](https://github.com/ultralytics/ultralytics) model with support for other Yolo8 models.
-- Yolo model implementation based on examples in [Candle](https://github.com/huggingface/candle), which implementation is based implementation in [Tinygrad](https://github.com/tinygrad/tinygrad).
-- Uses [Axum](https://github.com/tokio-rs/axum) as the web framework.
-- Utilizes Candle as the ML backend.
+![Blue Candle Logo](assets/blue-candle.png)
 
 ---
 
@@ -28,7 +22,7 @@ Written in Rust, Blue Candle promises high performance and reliability. It uses 
 
 The Yolo model implementation in Blue Candle is based on examples found in Candle which in turn is based on Tinygrad implementation.
 
-Our goal with Blue Candle is to provide an accessible, user-friendly, and efficient object detection solution that can seamlessly integrate with your existing Blue Iris setup.
+Our goal with Blue Candle is to provide an accessible, user-friendly, and efficient object detection solution that can seamlessly integrate with your existing home automation setup.
 
 ---
 
@@ -40,10 +34,15 @@ Our goal with Blue Candle is to provide an accessible, user-friendly, and effici
    - Visit the [Blue Candle releases page](https://github.com/xnorpx/blue-candle/releases/latest) to download the latest version. There are versions available for both CPU and CUDA (GPU).
 
 2. **Check CUDA Compatibility:**
-   - If you are using the CUDA version, ensure your GPU is compatible. Blue Candle supports compute capabilities 6.1 or higher. You can check your GPU's compute capability on the [NVIDIA CUDA GPUs page](https://developer.nvidia.com/cuda-gpus).
+   - If you are using the CUDA version, ensure your GPU is compatible. Blue Candle supports compute capabilities 6.1 or higher. You can check your GPU's compute capability on the [NVIDIA CUDA GPUs page](https://developer.nvidia.com/cuda-gpus). Also ensure you
+   have [NVIDIA CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) installed.
 
-3. **Choose the Correct Release:**
-   - Download the appropriate version for your system (CPU or CUDA). For CUDA, select the release that matches your GPU's compute capability.
+3. **Check CPU Compatibility:**
+   - The prebuilt release binaries is built for [AVX2](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions). The first intel processor with AVX2 was Haswell 2013. If your CPU does not support AVX2 then you need to build yourself or file a ticket so a
+   compatible binary can be released.
+
+4. **Choose the Correct Release:**
+   - Download the appropriate version for your system (CPU or CUDA). For CUDA, select the release that matches your GPU's compute capability. If your target platform is not available pre-built please file a ticket.
 
 ## Getting Started
 
@@ -214,11 +213,11 @@ By using, modifying, or distributing any part of this project, you agree to comp
 
 ## Acknowledgments
 
-- Web Framework: [Axum](https://github.com/tokio-rs/axum)
+- Blue Iris Software: [Blue Iris](https://blueirissoftware.com/)
 - ML Backend: [Candle](https://github.com/huggingface/candle)
 - Yolo 8 Model: [Ultralytics](https://github.com/ultralytics/ultralytics)
 - Yolo Model Inspiration: [Tinygrad](https://github.com/tinygrad/tinygrad)
-- Blue Iris Software: [Blue Iris](https://blueirissoftware.com/)
+- Web Framework: [Axum](https://github.com/tokio-rs/axum)
 
 ---
 

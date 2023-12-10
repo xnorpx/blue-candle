@@ -24,6 +24,7 @@ jobs:
     name: build-cuda
     env:
       RUST_BACKTRACE: 1
+      RUSTFLAGS: -C target-cpu=native
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
@@ -93,6 +94,7 @@ jobs:
     name: build-test-cpu
     env:
       RUST_BACKTRACE: 1
+      RUSTFLAGS: -C target-cpu=native
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
