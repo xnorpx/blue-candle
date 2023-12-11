@@ -35,7 +35,7 @@ Our goal with Blue Candle is to provide an accessible, user-friendly, and effici
 
 2. **Check CUDA Compatibility:**
    - If you are using the CUDA version, ensure your GPU is compatible. Blue Candle supports compute capabilities 6.1 or higher. You can check your GPU's compute capability on the [NVIDIA CUDA GPUs page](https://developer.nvidia.com/cuda-gpus). Also ensure you
-   have [NVIDIA CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) installed.
+   have [NVIDIA CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) installed. Currently we pre-build binaries for CUDA 11 and CUDA 12. Make sure to have the bin directory in path so that Blue-candle can find the Cuda shared libraries.
 
 3. **Check CPU Compatibility:**
    - The prebuilt release binaries is built for [AVX2](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions). The first intel processor with AVX2 was Haswell 2013. If your CPU does not support AVX2 then you need to build yourself or file a ticket so a
