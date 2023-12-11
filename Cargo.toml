@@ -38,3 +38,6 @@ tracing-subscriber = "0"
 uuid = { version = "1", features = ["v4"] }
 zune-jpeg = "*"
 zune-core = "*"
+
+[target.'cfg(windows)'.dependencies]
+ansi_term = "0"
