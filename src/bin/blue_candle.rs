@@ -96,6 +96,8 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_ansi_support();
+
     let args = Args::parse();
 
     // TODO(xnorpx): make this configurable
@@ -362,4 +364,11 @@ async fn test(detector: Detector, args: Args) -> anyhow::Result<()> {
         test_time, processing_time, inference_time
     );
     Ok(())
+}
+
+fn setup_ansi_support() {
+    #[cfg(target_os = "windows")]
+    if let Err(e) = ansi_term::enable_ansi_support() {
+        eprintln!("Failed to enable ANSI support: {}", e);
+    }
 }
