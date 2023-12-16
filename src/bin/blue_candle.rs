@@ -14,7 +14,7 @@ use blue_candle::{
 };
 use candle::utils::cuda_is_available;
 use candle_core as candle;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use image::io::Reader;
 use std::{
     io::Cursor,
@@ -22,7 +22,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, Level};
 use uuid::Uuid;
 
 const MEGABYTE: usize = 1024 * 1024; // 1 MB = 1024 * 1024 bytes
@@ -92,6 +92,14 @@ pub struct Args {
     /// Example: --image "/path/to/test.jpg"
     #[arg(long)]
     pub test: bool,
+
+    /// Sets a custom file path for logging
+    #[clap(short, long, value_parser)]
+    log_path: Option<String>,
+
+    /// Sets the level of logging
+    #[clap(short, long, value_enum, default_value_t = LogLevel::Info)]
+    log_level: LogLevel,
 }
 
 #[tokio::main]
@@ -100,10 +108,22 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    // TODO(xnorpx): make this configurable
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    let _guard = if let Some(log_path) = args.log_path.clone() {
+        println!("Starting Blue Candle, logging into: {}/blue_candle.log", log_path);
+        let file_appender = tracing_appender::rolling::never(&log_path, "blue_candle.log");
+        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+        tracing_subscriber::fmt()
+            .with_writer(non_blocking)
+            .with_max_level(Level::from(args.log_level))
+            .with_ansi(false)
+            .init();
+        Some(_guard)
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(Level::from(args.log_level))
+            .init();
+        None
+    };
 
     ensure_directory_exists(args.image_path.clone()).await?;
 
@@ -370,5 +390,26 @@ fn setup_ansi_support() {
     #[cfg(target_os = "windows")]
     if let Err(e) = ansi_term::enable_ansi_support() {
         eprintln!("Failed to enable ANSI support: {}", e);
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl From<LogLevel> for Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Trace => Level::TRACE,
+            LogLevel::Debug => Level::DEBUG,
+            LogLevel::Info => Level::INFO,
+            LogLevel::Warn => Level::WARN,
+            LogLevel::Error => Level::ERROR,
+        }
     }
 }
