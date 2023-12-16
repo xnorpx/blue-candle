@@ -34,10 +34,12 @@ tokio = { version = "1", features = [
 ] }
 tokio-util = { version = "0", features = ["codec"] }
 tracing = "0"
+tracing-appender = "0"
 tracing-subscriber = "0"
 uuid = { version = "1", features = ["v4"] }
-zune-jpeg = "*"
-zune-core = "*"
+zune-jpeg = "0"
+zune-core = "0"
 
 [target.'cfg(windows)'.dependencies]
 ansi_term = "0"
+windows-service = "0"
