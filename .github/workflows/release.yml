@@ -46,7 +46,6 @@ jobs:
     needs: ['create-release']
     env:
       RUST_BACKTRACE: 1
-      RUSTFLAGS: -C target-feature=+avx2,+fma,+f16c
       ASSET:
       ASSET_SUM:
     runs-on: ${{ matrix.os }}
@@ -231,7 +230,6 @@ jobs:
     needs: ['create-release']
     env:
       RUST_BACKTRACE: 1
-      RUSTFLAGS: -C target-feature=+avx2,+fma,+f16c
       ASSET:
       ASSET_SUM:
     runs-on: ${{ matrix.os }}
