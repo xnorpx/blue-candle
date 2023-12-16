@@ -109,7 +109,10 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let _guard = if let Some(log_path) = args.log_path.clone() {
-        println!("Starting Blue Candle, logging into: {}/blue_candle.log", log_path);
+        println!(
+            "Starting Blue Candle, logging into: {}/blue_candle.log",
+            log_path
+        );
         let file_appender = tracing_appender::rolling::never(&log_path, "blue_candle.log");
         let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
         tracing_subscriber::fmt()
