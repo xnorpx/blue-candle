@@ -323,9 +323,9 @@ checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
 name = "candle-core"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d60d9b91c73bc662dc45aff607f5ffe79724b7cf7d7c8dc12a72b25921683b67"
+checksum = "57433f80b510bc603fd9e52c5a15eb44a8ac70112b95b28b0ab8fb1c1f001822"
 dependencies = [
  "byteorder",
  "candle-kernels",
@@ -348,9 +348,9 @@ dependencies = [
 
 [[package]]
 name = "candle-kernels"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ce91f09bed7c5f106db9332ed667f6f3cae47ffea43d6d1201d51612e5ee6c9"
+checksum = "5aa5d745378eb85159b1d06650d0d1b14426503b327aebd469e0f1cfd306a8d3"
 dependencies = [
  "anyhow",
  "glob",
