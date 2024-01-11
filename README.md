@@ -6,7 +6,7 @@
 - [Yolo8](https://github.com/ultralytics/ultralytics) inference implementation
 - One small binary < 20 MB with one built in model.
 - Dockerless
-- [Blue Iris](https://blueirissoftware.com/) API compatible.
+- [Blue Iris](https://blueirissoftware.com/) and [Agent DVR](https://www.ispyconnect.com) API compatible.
 
 ---
 
@@ -16,7 +16,7 @@
 
 ## About Blue Candle
 
-Blue Candle is a streamlined, Windows-compatible object detection service designed for integration with Blue Iris. At its core, Blue Candle leverages the power and simplicity of Yolo 8 models, ensuring efficient and accurate detection capabilities. The service is dockerless, making it easily deployable in various environments.
+Blue Candle is a streamlined, Windows-compatible object detection service designed for integration with Blue Iris and Agent DVR. At its core, Blue Candle leverages the power and simplicity of Yolo 8 models, ensuring efficient and accurate detection capabilities. The service is dockerless, making it easily deployable in various environments.
 
 Written in Rust, Blue Candle promises high performance and reliability. It uses Axum for its web framework, ensuring a robust and scalable web interface. For machine learning operations, Candle is employed as the backend.
 
@@ -214,6 +214,7 @@ By using, modifying, or distributing any part of this project, you agree to comp
 ## Acknowledgments
 
 - Blue Iris Software: [Blue Iris](https://blueirissoftware.com/)
+- Agent DVR: [Agent DVR](https://www.ispyconnect.com/)
 - ML Backend: [Candle](https://github.com/huggingface/candle)
 - Yolo 8 Model: [Ultralytics](https://github.com/ultralytics/ultralytics)
 - Yolo Model Inspiration: [Tinygrad](https://github.com/tinygrad/tinygrad)
