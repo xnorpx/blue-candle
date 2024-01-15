@@ -30,7 +30,7 @@ struct Args {
     number_of_requests: u32,
 
     /// Interval in milliseconds for making requests
-    #[clap(short, long, default_value_t = 1000)]
+    #[clap(long, default_value_t = 1000)]
     interval: u64,
 }
 

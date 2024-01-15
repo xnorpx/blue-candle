@@ -205,8 +205,7 @@ async fn v1_vision_detection(
     // Detection will be slow, (100ms+) so we spawn a blocking task.
     let (predictions, inference_time, processing_time) = tokio::task::spawn_blocking(
         move || -> anyhow::Result<(Vec<Prediction>, InferenceTime, ProcessingTime)> {
-            let (bboxes, inference_time, processing_time) =
-                state2.detect(image_data.as_ref()).unwrap();
+            let (bboxes, inference_time, processing_time) = state2.detect(image_data.as_ref())?;
 
             let predictions = from_bbox_to_predictions(
                 bboxes,
