@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "blue-candle"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ansi_term",
  "anyhow",
@@ -271,6 +271,7 @@ dependencies = [
  "image",
  "imageproc",
  "intel-mkl-src",
+ "num_cpus",
  "reqwest",
  "rusttype",
  "serde",
