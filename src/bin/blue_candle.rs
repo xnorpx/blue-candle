@@ -17,6 +17,7 @@ use candle_core as candle;
 use clap::{Parser, ValueEnum};
 use image::io::Reader;
 use std::{
+    env,
     io::Cursor,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
@@ -105,6 +106,9 @@ pub struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     setup_ansi_support();
+
+    // Run CPU inference on one core
+    env::set_var("RAYON_NUM_THREADS", "1");
 
     let args = Args::parse();
 
