@@ -117,8 +117,6 @@ This command runs Blue Candle on port 8080, filtering results to include only "p
 
 Remember to replace the file paths and options in the example commands with those that are applicable to your setup.
 
-Certainly, I'll add a section to the README.md that includes the image 'crossing-od' as the output of a given command, and I'll include the citation for the picture as well.
-
 ---
 
 ### Object Detection Output
@@ -156,8 +154,6 @@ The image below is the result of the object detection test:
 9. `cargo run --release -- --test` to runs self test
 10. `cargo run --release` to run server
 11. For CUDA support then do `cargo run --release --features cuda -- --test`
-
-Certainly! I'll integrate the instructions for building the test client with the previous instructions for using it, making the section more concise.
 
 ---
 
