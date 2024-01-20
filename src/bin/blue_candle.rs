@@ -101,23 +101,46 @@ pub struct Args {
     /// Sets the level of logging
     #[clap(short, long, value_enum, default_value_t = LogLevel::Info)]
     log_level: LogLevel,
+
+    /// Max blocking threads, max will be number of cores of the system
+    #[arg(long)]
+    pub blocking_threads: Option<usize>,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     setup_ansi_support();
-
-    // Run CPU inference on one core
-    env::set_var("RAYON_NUM_THREADS", "1");
 
     let args = Args::parse();
 
+    let blocking_threads = if !args.cpu && cuda_is_available() {
+        // When running GPU we only run one worker thread to ensure that we
+        // queue work in in memory and not on the GPU memory. This to avoid
+        // overload the GPU memory.
+        1
+    } else {
+        // Run CPU inference on one core
+        env::set_var("RAYON_NUM_THREADS", "1");
+        let num_cores = num_cpus::get();
+        let blocking_threads = args.blocking_threads.unwrap_or(num_cores - 1);
+        blocking_threads.clamp(1, num_cores - 1)
+    };
+
+    // Configure Tokio
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1) // Number of request will be low so 1 thread is enough
+        .max_blocking_threads(blocking_threads) // Number of request for processing
+        .enable_all()
+        .build()?;
+
+    debug!("Tokio initilized with {blocking_threads} blocking threads.");
+
+    // Logging
     let _guard = if let Some(log_path) = args.log_path.clone() {
         println!(
             "Starting Blue Candle, logging into: {}/blue_candle.log",
             log_path
         );
-        let file_appender = tracing_appender::rolling::never(&log_path, "blue_candle.log");
+        let file_appender = tracing_appender::rolling::daily(&log_path, "blue_candle.log");
         let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
         tracing_subscriber::fmt()
             .with_writer(non_blocking)
@@ -132,8 +155,6 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    ensure_directory_exists(args.image_path.clone()).await?;
-
     let detector = Detector::new(
         args.cpu,
         args.model.clone(),
@@ -143,20 +164,24 @@ async fn main() -> anyhow::Result<()> {
         args.image_path.clone(),
     )?;
 
-    if let Some(model_path) = args.model_path {
-        download_models(model_path).await?;
-        return Ok(());
-    }
-    if args.test {
-        return test(detector, args).await;
-    }
+    rt.block_on(async {
+        ensure_directory_exists(args.image_path.clone()).await?;
 
-    match args.image.clone() {
-        None => run_server(args, detector).await?,
-        Some(image) => test_image(image, args, detector).await?,
-    };
+        if let Some(model_path) = args.model_path {
+            download_models(model_path).await?;
+            return Ok(());
+        }
+        if args.test {
+            test(detector, args).await?;
+            return Ok(());
+        }
 
-    Ok(())
+        match args.image.clone() {
+            None => run_server(args, detector).await?,
+            Some(image) => test_image(image, args, detector).await?,
+        };
+        Ok(())
+    })
 }
 
 async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
