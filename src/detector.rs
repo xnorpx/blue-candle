@@ -7,6 +7,7 @@ use candle::{
 use candle_core as candle;
 use candle_nn::{Module, VarBuilder};
 use fast_image_resize::{Image, PixelType, Resizer};
+use oneshot::{Receiver, Sender};
 use std::{
     num::NonZeroU32,
     time::{Duration, Instant},
@@ -26,6 +27,18 @@ static DEFAULT_MODEL_MULTIPLES: Multiples = Multiples::n();
 pub type Bboxes = Vec<Vec<Bbox<Vec<KeyPoint>>>>;
 pub type ProcessingTime = Duration;
 pub type InferenceTime = Duration;
+
+struct ObjectsDetected {
+    bboxes: Bboxes,
+    inference_duration: Duration,
+    processing_duration: Duration,
+}
+
+enum DetectResult {
+    Sync(ObjectsDetected), // From CPU
+    Async(Receiver<ObjectsDetected>) // From GPU Actor
+}
+
 
 #[derive(Clone, Debug)]
 pub struct Detector {
@@ -101,6 +114,67 @@ impl Detector {
         let processing_time = Instant::now().duration_since(start_processing_time);
         Ok((bboxes, inference_time, processing_time))
     }
+
+    pub fn detect2(&self, buf: &[u8]) -> anyhow::Result<DetectResult> {
+        let start_processing_time = Instant::now();
+        bail!("bla")
+    }
+
+    pub fn decode_and_resize(&self, buf: &[u8]) -> anyhow::Result<(Vec<u8>, usize, usize, usize, usize)> {
+        let options = DecoderOptions::default()
+            .set_strict_mode(true)
+            .set_use_unsafe(true)
+            .jpeg_set_out_colorspace(ColorSpace::RGB);
+
+        let mut decoder = JpegDecoder::new_with_options(buf, options);
+        let decode_image_start_time = Instant::now();
+        let pixels = decoder.decode()?;
+        let decode_image_time = Instant::now().duration_since(decode_image_start_time);
+        debug!("Decode image time: {:#?}", decode_image_time);
+        let (original_width, original_height) = decoder
+            .dimensions().ok_or_else(|| anyhow!("Image header not decoded"))?;
+
+        let (target_width, target_height) = {
+            if original_width < original_height {
+                let w = original_width * 640 / original_height;
+                // Sizes have to be divisible by 32.
+                (w / 32 * 32, 640)
+            } else {
+                let h = original_height * 640 / original_width;
+                (640, h / 32 * 32)
+            }
+        };
+
+        let resize_image_start_time = Instant::now();
+        let src_image = Image::from_vec_u8(
+            NonZeroU32::new(original_width as u32).ok_or_else(|| anyhow!("Width is not larger than 0"))?,
+            NonZeroU32::new(original_height as u32).ok_or_else(|| anyhow!("Height is not larger than 0"))?,
+            pixels,
+            PixelType::U8x3,
+        )?;
+
+        let mut dst_image = Image::new(
+            NonZeroU32::new(target_width as u32)
+                .ok_or_else(|| anyhow!("Width is not larger than 0"))?,
+            NonZeroU32::new(target_height as u32)
+                .ok_or_else(|| anyhow!("Height is not larger than 0"))?,
+            PixelType::U8x3,
+        );
+
+        let mut resizer = Resizer::new(fast_image_resize::ResizeAlg::Convolution(
+            fast_image_resize::FilterType::Bilinear,
+        ));
+
+        resizer.resize(&src_image.view(), &mut dst_image.view_mut())?;
+        let resize_image_time = Instant::now().duration_since(resize_image_start_time);
+        debug!("Resize image time: {:#?}", resize_image_time);
+        let data = dst_image.into_vec();
+
+        Ok((data, target_height, target_width, original_height, original_width))
+    }
+
+    pub fn object_detection(&self, image: Vec<u8>) {}
+
 
     pub fn detect(
         &self,
@@ -194,11 +268,41 @@ impl Detector {
     }
 }
 
+struct GpuInferenceMessage {
+    data: Vec<u8>, 
+    height: usize,
+    width: usize,
+    result: Sender<ObjectsDetected>
+}
+
+fn run_inference(
+    data: Vec<u8>, 
+    height: usize,
+    width: usize,
+    original_height: usize,
+    original_width: usize,
+    model: YoloV8, 
+    device: Device, 
+    confidence_threshold: f32, 
+    nms_threshold: f32,
+    start_processing_time: Instant) -> anyhow::Result<ObjectsDetected> {
+        let image_t =
+                Tensor::from_vec(data, (height, width, 3), &device)?.permute((2, 0, 1))?;
+        let image_t = (image_t.unsqueeze(0)?.to_dtype(DType::F32)? * (1. / 255.))?;
+        let start_inference_time = Instant::now();
+        let pred = model.forward(&image_t)?.squeeze(0)?;
+        let done = Instant::now();
+        let inference_duration = done.duration_since(start_inference_time);
+        let processing_duration = done.duration_since(start_processing_time);
+        let bboxes = from_tensor_to_bbox(&pred, confidence_threshold, nms_threshold)?;
+        Ok(ObjectsDetected{ bboxes, inference_duration, processing_duration })
+}
+
 pub fn from_tensor_to_bbox(
     pred: &Tensor,
     confidence_threshold: f32,
     nms_threshold: f32,
-) -> anyhow::Result<Vec<Vec<Bbox<Vec<KeyPoint>>>>> {
+) -> anyhow::Result<Bboxes> {
     let from_tensor_start_time = Instant::now();
     let pred = pred.to_device(&Device::Cpu)?;
     let from_tensor_time = Instant::now().duration_since(from_tensor_start_time);
@@ -208,7 +312,7 @@ pub fn from_tensor_to_bbox(
     let (pred_size, npreds) = pred.dims2()?;
     let nclasses = pred_size - 4;
     // The bounding boxes grouped by (maximum) class index.
-    let mut bboxes: Vec<Vec<Bbox<Vec<KeyPoint>>>> = (0..nclasses).map(|_| vec![]).collect();
+    let mut bboxes: Bboxes = (0..nclasses).map(|_| vec![]).collect();
     // Extract the bounding boxes for which confidence is above the threshold.
     for index in 0..npreds {
         let pred = Vec::<f32>::try_from(pred.i((.., index))?)?;

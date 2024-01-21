@@ -112,18 +112,16 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let blocking_threads = if !args.cpu && cuda_is_available() {
-        // When running GPU we only run one worker thread to ensure that we
-        // queue work in in memory and not on the GPU memory. This to avoid
-        // overload the GPU memory.
-        1
-    } else {
-        // Run CPU inference on one core
-        env::set_var("RAYON_NUM_THREADS", "1");
-        let num_cores = num_cpus::get();
-        let blocking_threads = args.blocking_threads.unwrap_or(num_cores - 1);
-        blocking_threads.clamp(1, num_cores - 1)
-    };
+    // Run CPU inference on one core
+    env::set_var("RAYON_NUM_THREADS", "1");
+    let num_cores = num_cpus::get();
+    let mut blocking_threads = args.blocking_threads.unwrap_or(num_cores - 1);
+    blocking_threads = blocking_threads.clamp(1, num_cores - 1);
+
+    if !args.cpu && cuda_is_available() {
+        blocking_threads -= 1;
+        blocking_threads = blocking_threads.clamp(1, num_cores - 2);
+    }
 
     // Configure Tokio
     let rt = tokio::runtime::Builder::new_multi_thread()

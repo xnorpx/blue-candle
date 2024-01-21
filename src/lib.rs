@@ -6,3 +6,4 @@ pub mod coco_classes;
 pub mod detector;
 pub mod model;
 pub mod utils;
+pub mod gpu_actor;
