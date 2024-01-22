@@ -10,6 +10,8 @@ use blue_candle::{
     api::{Prediction, VisionDetectionRequest, VisionDetectionResponse},
     coco_classes,
     detector::{Bbox, Detector, InferenceTime, KeyPoint, ProcessingTime, BIKE_IMAGE_BYTES},
+    server_stats::ServerStats,
+    system_info,
     utils::{download_models, ensure_directory_exists, img_with_bbox, read_jpeg_file, save_image},
 };
 use candle::utils::cuda_is_available;
@@ -23,6 +25,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+use tokio::sync::Mutex;
 use tracing::{debug, info, Level};
 use uuid::Uuid;
 
@@ -107,32 +110,15 @@ pub struct Args {
     pub blocking_threads: Option<usize>,
 }
 
+struct ServerState {
+    detector: Detector,
+    stats: Mutex<ServerStats>,
+}
+
 fn main() -> anyhow::Result<()> {
     setup_ansi_support();
 
     let args = Args::parse();
-
-    let blocking_threads = if !args.cpu && cuda_is_available() {
-        // When running GPU we only run one worker thread to ensure that we
-        // queue work in in memory and not on the GPU memory. This to avoid
-        // overload the GPU memory.
-        1
-    } else {
-        // Run CPU inference on one core
-        env::set_var("RAYON_NUM_THREADS", "1");
-        let num_cores = num_cpus::get();
-        let blocking_threads = args.blocking_threads.unwrap_or(num_cores - 1);
-        blocking_threads.clamp(1, num_cores - 1)
-    };
-
-    // Configure Tokio
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1) // Number of request will be low so 1 thread is enough
-        .max_blocking_threads(blocking_threads) // Number of request for processing
-        .enable_all()
-        .build()?;
-
-    debug!("Tokio initilized with {blocking_threads} blocking threads.");
 
     // Logging
     let _guard = if let Some(log_path) = args.log_path.clone() {
@@ -154,6 +140,30 @@ fn main() -> anyhow::Result<()> {
             .init();
         None
     };
+
+    info!("Starting Blue Candle object detection service");
+
+    system_info::cpu_info()?;
+    let num_cores = num_cpus::get();
+
+    let mut blocking_threads = if !args.cpu && cuda_is_available() {
+        system_info::cuda_gpu_info()?;
+        args.blocking_threads.unwrap_or(1)
+    } else {
+        // Run CPU inference on one core
+        env::set_var("RAYON_NUM_THREADS", "1");
+        args.blocking_threads.unwrap_or(num_cores - 1)
+    };
+    blocking_threads = blocking_threads.clamp(1, num_cores - 1);
+
+    // Configure Tokio
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1) // Number of request will be low so 1 thread is enough
+        .max_blocking_threads(blocking_threads) // Number of request for processing
+        .enable_all()
+        .build()?;
+
+    debug!("Tokio initilized with {blocking_threads} blocking threads.");
 
     let detector = Detector::new(
         args.cpu,
@@ -191,11 +201,14 @@ async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
         processing_time, inference_time
     );
 
-    let detector = Arc::new(detector);
+    let server_state = Arc::new(ServerState {
+        detector,
+        stats: Mutex::new(ServerStats::default()),
+    });
 
     let blue_candle = Router::new()
         .route("/v1/vision/detection", post(v1_vision_detection))
-        .with_state(detector.clone())
+        .with_state(server_state.clone())
         .layer(DefaultBodyLimit::max(THIRTY_MEGABYTES));
 
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), args.port);
@@ -207,7 +220,7 @@ async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
 }
 
 async fn v1_vision_detection(
-    State(detector): State<Arc<Detector>>,
+    State(server_state): State<Arc<ServerState>>,
     mut multipart: Multipart, // Note multipart needs to be last
 ) -> Result<Json<VisionDetectionResponse>, BlueCandleError> {
     let request_start_time = Instant::now();
@@ -230,7 +243,7 @@ async fn v1_vision_detection(
     }
 
     let image_data = vision_request.image_data.clone();
-    let state2 = detector.clone();
+    let state2 = server_state.detector.clone();
     // Detection will be slow, (100ms+) so we spawn a blocking task.
     let (predictions, inference_time, processing_time) = tokio::task::spawn_blocking(
         move || -> anyhow::Result<(Vec<Prediction>, InferenceTime, ProcessingTime)> {
@@ -249,7 +262,7 @@ async fn v1_vision_detection(
     .await??;
 
     if !predictions.is_empty() {
-        if let Some(image_path) = detector.image_path() {
+        if let Some(image_path) = server_state.detector.image_path() {
             let reader = Reader::new(Cursor::new(vision_request.image_data.as_ref()))
                 .with_guessed_format()
                 .expect("Cursor io never fails");
@@ -265,10 +278,20 @@ async fn v1_vision_detection(
 
     let image = vision_request.image_name.split('.').next().unwrap_or("");
 
-    info!(
+    debug!(
         "Image: {}, request time {:#?}, processing time: {:#?}, inference time: {:#?}",
         image, request_time, processing_time, inference_time
     );
+
+    {
+        let mut stats = server_state.stats.lock().await;
+        stats.calculate_and_log_stats(
+            request_start_time,
+            request_time,
+            processing_time,
+            inference_time,
+        );
+    }
 
     let response = VisionDetectionResponse {
         success: true,
@@ -278,7 +301,7 @@ async fn v1_vision_detection(
         count,
         command: "detect".into(),
         module_id: "Yolo8".into(),
-        execution_provider: if detector.is_gpu() {
+        execution_provider: if server_state.detector.is_gpu() {
             "GPU".to_string()
         } else {
             "CPU".to_string()
