@@ -10,6 +10,8 @@ use blue_candle::{
     api::{Prediction, VisionDetectionRequest, VisionDetectionResponse},
     coco_classes,
     detector::{Bbox, Detector, InferenceTime, KeyPoint, ProcessingTime, BIKE_IMAGE_BYTES},
+    server_stats::ServerStats,
+    system_info,
     utils::{download_models, ensure_directory_exists, img_with_bbox, read_jpeg_file, save_image},
 };
 use candle::utils::cuda_is_available;
@@ -23,6 +25,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+use tokio::sync::Mutex;
 use tracing::{debug, info, Level};
 use uuid::Uuid;
 
@@ -101,10 +104,18 @@ pub struct Args {
     /// Sets the level of logging
     #[clap(short, long, value_enum, default_value_t = LogLevel::Info)]
     log_level: LogLevel,
+
+    /// Max blocking threads, max will be number of cores of the system
+    #[arg(long)]
+    pub blocking_threads: Option<usize>,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+struct ServerState {
+    detector: Detector,
+    stats: Mutex<ServerStats>,
+}
+
+fn main() -> anyhow::Result<()> {
     setup_ansi_support();
 
     // Run CPU inference on one core
@@ -112,12 +123,13 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    // Logging
     let _guard = if let Some(log_path) = args.log_path.clone() {
         println!(
             "Starting Blue Candle, logging into: {}/blue_candle.log",
             log_path
         );
-        let file_appender = tracing_appender::rolling::never(&log_path, "blue_candle.log");
+        let file_appender = tracing_appender::rolling::daily(&log_path, "blue_candle.log");
         let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
         tracing_subscriber::fmt()
             .with_writer(non_blocking)
@@ -132,7 +144,29 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    ensure_directory_exists(args.image_path.clone()).await?;
+    info!("Starting Blue Candle object detection service");
+
+    system_info::cpu_info()?;
+    let num_cores = num_cpus::get();
+
+    let mut blocking_threads = if !args.cpu && cuda_is_available() {
+        system_info::cuda_gpu_info()?;
+        args.blocking_threads.unwrap_or(1)
+    } else {
+        // Run CPU inference on one core
+        env::set_var("RAYON_NUM_THREADS", "1");
+        args.blocking_threads.unwrap_or(num_cores - 1)
+    };
+    blocking_threads = blocking_threads.clamp(1, num_cores - 1);
+
+    // Configure Tokio
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1) // Number of request will be low so 1 thread is enough
+        .max_blocking_threads(blocking_threads) // Number of request for processing
+        .enable_all()
+        .build()?;
+
+    debug!("Tokio initilized with {blocking_threads} blocking threads.");
 
     let detector = Detector::new(
         args.cpu,
@@ -143,20 +177,24 @@ async fn main() -> anyhow::Result<()> {
         args.image_path.clone(),
     )?;
 
-    if let Some(model_path) = args.model_path {
-        download_models(model_path).await?;
-        return Ok(());
-    }
-    if args.test {
-        return test(detector, args).await;
-    }
+    rt.block_on(async {
+        ensure_directory_exists(args.image_path.clone()).await?;
 
-    match args.image.clone() {
-        None => run_server(args, detector).await?,
-        Some(image) => test_image(image, args, detector).await?,
-    };
+        if let Some(model_path) = args.model_path {
+            download_models(model_path).await?;
+            return Ok(());
+        }
+        if args.test {
+            test(detector, args).await?;
+            return Ok(());
+        }
 
-    Ok(())
+        match args.image.clone() {
+            None => run_server(args, detector).await?,
+            Some(image) => test_image(image, args, detector).await?,
+        };
+        Ok(())
+    })
 }
 
 async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
@@ -166,11 +204,14 @@ async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
         processing_time, inference_time
     );
 
-    let detector = Arc::new(detector);
+    let server_state = Arc::new(ServerState {
+        detector,
+        stats: Mutex::new(ServerStats::default()),
+    });
 
     let blue_candle = Router::new()
         .route("/v1/vision/detection", post(v1_vision_detection))
-        .with_state(detector.clone())
+        .with_state(server_state.clone())
         .layer(DefaultBodyLimit::max(THIRTY_MEGABYTES));
 
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), args.port);
@@ -182,7 +223,7 @@ async fn run_server(args: Args, detector: Detector) -> anyhow::Result<()> {
 }
 
 async fn v1_vision_detection(
-    State(detector): State<Arc<Detector>>,
+    State(server_state): State<Arc<ServerState>>,
     mut multipart: Multipart, // Note multipart needs to be last
 ) -> Result<Json<VisionDetectionResponse>, BlueCandleError> {
     let request_start_time = Instant::now();
@@ -205,7 +246,7 @@ async fn v1_vision_detection(
     }
 
     let image_data = vision_request.image_data.clone();
-    let state2 = detector.clone();
+    let state2 = server_state.detector.clone();
     // Detection will be slow, (100ms+) so we spawn a blocking task.
     let (predictions, inference_time, processing_time) = tokio::task::spawn_blocking(
         move || -> anyhow::Result<(Vec<Prediction>, InferenceTime, ProcessingTime)> {
@@ -224,7 +265,7 @@ async fn v1_vision_detection(
     .await??;
 
     if !predictions.is_empty() {
-        if let Some(image_path) = detector.image_path() {
+        if let Some(image_path) = server_state.detector.image_path() {
             let reader = Reader::new(Cursor::new(vision_request.image_data.as_ref()))
                 .with_guessed_format()
                 .expect("Cursor io never fails");
@@ -240,10 +281,20 @@ async fn v1_vision_detection(
 
     let image = vision_request.image_name.split('.').next().unwrap_or("");
 
-    info!(
+    debug!(
         "Image: {}, request time {:#?}, processing time: {:#?}, inference time: {:#?}",
         image, request_time, processing_time, inference_time
     );
+
+    {
+        let mut stats = server_state.stats.lock().await;
+        stats.calculate_and_log_stats(
+            request_start_time,
+            request_time,
+            processing_time,
+            inference_time,
+        );
+    }
 
     let response = VisionDetectionResponse {
         success: true,
@@ -253,7 +304,7 @@ async fn v1_vision_detection(
         count,
         command: "detect".into(),
         module_id: "Yolo8".into(),
-        execution_provider: if detector.is_gpu() {
+        execution_provider: if server_state.detector.is_gpu() {
             "GPU".to_string()
         } else {
             "CPU".to_string()
