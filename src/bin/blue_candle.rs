@@ -352,7 +352,7 @@ pub fn from_bbox_to_predictions(
     bboxes: (Vec<Vec<Bbox<Vec<KeyPoint>>>>, f32, f32),
     confidence_threshold: f32,
     class_names: &[&str],
-    labels: &Vec<String>,
+    labels: &[String],
 ) -> Vec<Prediction> {
     let mut predictions: Vec<Prediction> = Vec::new();
     let w_ratio = bboxes.1;
