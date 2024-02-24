@@ -85,8 +85,8 @@ impl Multiples {
     }
 
     pub fn from_filename(filename: &str) -> Option<Multiples> {
-        if let Some(start) = filename.find("yolov8") {
-            let remaining = &filename[start + 6..];
+        if let Some(start) = filename.find("v8") {
+            let remaining = &filename[start + 2..];
             if let Some(c) = remaining.chars().next() {
                 match c {
                     'n' => Some(Multiples::n()),

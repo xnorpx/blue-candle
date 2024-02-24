@@ -73,7 +73,7 @@ impl Detector {
             (vb, multiplies)
         };
 
-        let model = YoloV8::load(vb, multiples, 80)?;
+        let model = YoloV8::load(vb, multiples, 2)?;
         Ok(Self {
             model,
             confidence_threshold,
