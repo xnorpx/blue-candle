@@ -270,7 +270,7 @@ dependencies = [
  "ansi_term",
  "anyhow",
  "axum",
- "candle-core",
+ "candle-core 0.4.1",
  "candle-nn",
  "clap",
  "fast_image_resize",
@@ -341,7 +341,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6db8659ea87ee8197d2fc627348916cce0561330ee7ae3874e771691d3cecb2f"
 dependencies = [
  "byteorder",
- "candle-kernels",
+ "candle-kernels 0.3.3",
+ "cudarc",
+ "gemm",
+ "half",
+ "intel-mkl-src",
+ "libc",
+ "memmap2",
+ "num-traits",
+ "num_cpus",
+ "rand 0.8.5",
+ "rand_distr 0.4.3",
+ "rayon",
+ "safetensors",
+ "thiserror",
+ "yoke",
+ "zip",
+]
+
+[[package]]
+name = "candle-core"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f1b20174c1707e20f4cb364a355b449803c03e9b0c9193324623cf9787a4e00"
+dependencies = [
+ "byteorder",
+ "candle-kernels 0.4.1",
  "cudarc",
  "gemm",
  "half",
@@ -369,12 +394,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "candle-kernels"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5845911a44164ebb73b56a0e23793ba1b583bad102af7400fe4768babc5815b2"
+dependencies = [
+ "bindgen_cuda",
+]
+
+[[package]]
 name = "candle-nn"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ddce8312032760a6791d6adc9c56dc54fd7c1be38d85dcc4862f1c75228bbc7"
 dependencies = [
- "candle-core",
+ "candle-core 0.3.3",
  "half",
  "intel-mkl-src",
  "num-traits",
