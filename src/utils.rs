@@ -1,4 +1,5 @@
 use crate::api::Prediction;
+use ab_glyph::{FontArc, PxScale};
 use candle_core as candle;
 use image::{codecs::jpeg::JpegEncoder, io::Reader, DynamicImage, ImageFormat};
 use std::{
@@ -34,8 +35,9 @@ pub fn img_with_bbox(
 
     let mut img = original_image.to_rgb8();
     let font = if legend_size > 0 {
-        let font = Vec::from(include_bytes!("./../assets/roboto-mono-stripped.ttf") as &[u8]);
-        rusttype::Font::try_from_vec(font)
+        Some(FontArc::try_from_slice(include_bytes!(
+            "./../assets/roboto-mono-stripped.ttf"
+        ))?)
     } else {
         None
     };
@@ -68,7 +70,7 @@ pub fn img_with_bbox(
                 image::Rgb([255, 255, 255]),
                 prediction.x_min as i32,
                 prediction.y_min as i32,
-                rusttype::Scale::uniform(legend_size as f32 - 1.),
+                PxScale::from(legend_size as f32 - 1.),
                 font,
                 &legend,
             )

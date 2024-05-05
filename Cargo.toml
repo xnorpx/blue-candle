@@ -12,6 +12,7 @@ default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
 
 [dependencies]
+ab_glyph = "0"
 anyhow = "1"
 axum = { version = "0", features = ["multipart"] }
 candle-core = "0"

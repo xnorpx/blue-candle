@@ -157,9 +157,6 @@ jobs:
         - build: linux
           os: ubuntu-latest
           rust: stable
-        - build: macos
-          os: macos-latest
-          rust: stable
         - build: win
           os: windows-latest
           rust: stable
