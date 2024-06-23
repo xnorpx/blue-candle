@@ -6,11 +6,8 @@ use candle::{
 };
 use candle_core as candle;
 use candle_nn::{Module, VarBuilder};
-use fast_image_resize::{Image, PixelType, Resizer};
-use std::{
-    num::NonZeroU32,
-    time::{Duration, Instant},
-};
+use fast_image_resize::{images::Image, PixelType, Resizer};
+use std::time::{Duration, Instant};
 use tracing::{debug, info};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
@@ -140,26 +137,13 @@ impl Detector {
 
         let image_t = {
             let resize_image_start_time = Instant::now();
-            let src_image = Image::from_vec_u8(
-                NonZeroU32::new(w as u32).ok_or_else(|| anyhow!("Width is not larger than 0"))?,
-                NonZeroU32::new(h as u32).ok_or_else(|| anyhow!("Height is not larger than 0"))?,
-                pixels,
-                PixelType::U8x3,
-            )?;
+            let src_image = Image::from_vec_u8(w as u32, h as u32, pixels, PixelType::U8x3)?;
 
-            let mut dst_image = Image::new(
-                NonZeroU32::new(width as u32)
-                    .ok_or_else(|| anyhow!("Width is not larger than 0"))?,
-                NonZeroU32::new(height as u32)
-                    .ok_or_else(|| anyhow!("Height is not larger than 0"))?,
-                PixelType::U8x3,
-            );
+            let mut dst_image = Image::new(width as u32, height as u32, PixelType::U8x3);
 
-            let mut resizer = Resizer::new(fast_image_resize::ResizeAlg::Convolution(
-                fast_image_resize::FilterType::Bilinear,
-            ));
+            let mut resizer = Resizer::new();
 
-            resizer.resize(&src_image.view(), &mut dst_image.view_mut())?;
+            resizer.resize(&src_image, &mut dst_image, None)?;
             let resize_image_time = Instant::now().duration_since(resize_image_start_time);
             debug!("Resize image time: {:#?}", resize_image_time);
             let data = dst_image.into_vec();
