@@ -436,8 +436,6 @@ dependencies = [
  "cudarc",
  "gemm",
  "half",
- "intel-mkl-src",
- "libc",
  "memmap2",
  "num-traits",
  "num_cpus",
@@ -467,7 +465,6 @@ checksum = "b006b30f66a0d94fc9cef0ac4de6ce510565f35ae2c6c35ce5d4aacfb0fc8eeb"
 dependencies = [
  "candle-core",
  "half",
- "intel-mkl-src",
  "num-traits",
  "rayon",
  "safetensors",
