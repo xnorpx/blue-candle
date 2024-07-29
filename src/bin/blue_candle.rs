@@ -17,7 +17,7 @@ use blue_candle::{
 use candle::utils::cuda_is_available;
 use candle_core as candle;
 use clap::{Parser, ValueEnum};
-use image::io::Reader;
+use image::ImageReader;
 use std::{
     env,
     io::Cursor,
@@ -263,7 +263,7 @@ async fn v1_vision_detection(
 
     if !predictions.is_empty() {
         if let Some(image_path) = server_state.detector.image_path() {
-            let reader = Reader::new(Cursor::new(vision_request.image_data.as_ref()))
+            let reader = ImageReader::new(Cursor::new(vision_request.image_data.as_ref()))
                 .with_guessed_format()
                 .expect("Cursor io never fails");
             let img = img_with_bbox(predictions.clone(), reader, 15)?;
@@ -400,7 +400,7 @@ async fn test_image(image: String, args: Args, detector: Detector) -> anyhow::Re
     let predictions =
         from_bbox_to_predictions(bboxes, 0.5, &coco_classes::NAMES, detector.labels());
 
-    let reader = Reader::new(Cursor::new(contents.as_ref()))
+    let reader = ImageReader::new(Cursor::new(contents.as_ref()))
         .with_guessed_format()
         .expect("Cursor io never fails");
     let img = img_with_bbox(predictions, reader, args.legend_size)?;
@@ -425,7 +425,7 @@ async fn test(detector: Detector, args: Args) -> anyhow::Result<()> {
         &coco_classes::NAMES,
         detector.labels(),
     );
-    let reader = Reader::new(Cursor::new(BIKE_IMAGE_BYTES))
+    let reader = ImageReader::new(Cursor::new(BIKE_IMAGE_BYTES))
         .with_guessed_format()
         .expect("Cursor io never fails");
     let img = img_with_bbox(predictions.clone(), reader, 30)?;

@@ -1,7 +1,7 @@
 use crate::api::Prediction;
 use ab_glyph::{FontArc, PxScale};
 use candle_core as candle;
-use image::{codecs::jpeg::JpegEncoder, io::Reader, DynamicImage, ImageFormat};
+use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageFormat, ImageReader};
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
@@ -27,7 +27,7 @@ pub async fn download_models(model_path: String) -> anyhow::Result<()> {
 
 pub fn img_with_bbox(
     predictions: Vec<Prediction>,
-    original_img: Reader<Cursor<&[u8]>>,
+    original_img: ImageReader<Cursor<&[u8]>>,
     legend_size: u32,
 ) -> anyhow::Result<DynamicImage> {
     assert_eq!(original_img.format(), Some(ImageFormat::Jpeg));
