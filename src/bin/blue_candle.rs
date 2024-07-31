@@ -5,7 +5,7 @@ use blue_candle::{
     system_info,
     utils::{download_models, ensure_directory_exists, img_with_bbox, read_jpeg_file, save_image},
 };
-use candle::utils::cuda_is_available;
+use candle::utils::{cuda_is_available, with_avx};
 use candle_core as candle;
 use clap::Parser;
 use image::ImageReader;
@@ -117,6 +117,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     info!("Starting Blue Candle object detection service");
+    info!(avx = ?with_avx(), cuda = ?cuda_is_available(), "Compiled with");
 
     system_info::cpu_info()?;
     let num_cores = num_cpus::get();
