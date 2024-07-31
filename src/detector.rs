@@ -90,12 +90,10 @@ impl Detector {
         &self,
     ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime, ProcessingTime)> {
         info!("Test detection");
-        let start_processing_time = Instant::now();
-        let (bboxes, inference_time) = self.detect_inner(BIKE_IMAGE_BYTES)?;
+        let (bboxes, inference_time, processing_time) = self.detect(BIKE_IMAGE_BYTES)?;
         if bboxes.0.is_empty() {
             bail!("Detection failed");
         }
-        let processing_time = Instant::now().duration_since(start_processing_time);
         Ok((bboxes, inference_time, processing_time))
     }
 
@@ -103,13 +101,6 @@ impl Detector {
         &self,
         buf: &[u8],
     ) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime, ProcessingTime)> {
-        let start_processing_time = Instant::now();
-        let (bboxes, inference_time) = self.detect_inner(buf)?;
-        let processing_time = Instant::now().duration_since(start_processing_time);
-        Ok((bboxes, inference_time, processing_time))
-    }
-
-    fn detect_inner(&self, buf: &[u8]) -> anyhow::Result<((Bboxes, f32, f32), InferenceTime)> {
         let options = DecoderOptions::default()
             .set_strict_mode(true)
             .set_use_unsafe(true)
@@ -124,6 +115,10 @@ impl Detector {
             .dimensions()
             .expect("The image should have been encoded?");
 
+        // Codeproject AI doesn't include the image decode in processing time
+        // hence we exclude it as well.
+        let start_processing_time = Instant::now();
+
         let (width, height) = {
             if w < h {
                 let w = w * 640 / h;
@@ -135,30 +130,26 @@ impl Detector {
             }
         };
 
-        let image_t = {
-            let resize_image_start_time = Instant::now();
-            let src_image = Image::from_vec_u8(w as u32, h as u32, pixels, PixelType::U8x3)?;
+        debug!("Resizing image from {}x{} to {}x{}", w, h, width, height);
+        let resize_image_start_time = Instant::now();
+        let src_image = Image::from_vec_u8(w as u32, h as u32, pixels, PixelType::U8x3)?;
+        let mut dst_image = Image::new(width as u32, height as u32, PixelType::U8x3);
+        let mut resizer = Resizer::new();
+        resizer.resize(&src_image, &mut dst_image, None)?;
+        let resize_image_time = Instant::now().duration_since(resize_image_start_time);
+        let resized_image = dst_image.into_vec();
+        debug!("Resize image time: {:#?}", resize_image_time);
 
-            let mut dst_image = Image::new(width as u32, height as u32, PixelType::U8x3);
-
-            let mut resizer = Resizer::new();
-
-            resizer.resize(&src_image, &mut dst_image, None)?;
-            let resize_image_time = Instant::now().duration_since(resize_image_start_time);
-            debug!("Resize image time: {:#?}", resize_image_time);
-            let data = dst_image.into_vec();
-            let to_tensor_start_time = Instant::now();
-            let image_t =
-                Tensor::from_vec(data, (height, width, 3), &self.device)?.permute((2, 0, 1))?;
-            let to_tensor_time = Instant::now().duration_since(to_tensor_start_time);
-            debug!("To tensor time: {:#?}", to_tensor_time);
-            image_t
-        };
-        let image_t = (image_t.unsqueeze(0)?.to_dtype(DType::F32)? * (1. / 255.))?;
         let start_inference_time = Instant::now();
+        let image_t = Tensor::from_vec(resized_image, (height, width, 3), &self.device)?
+            .permute((2, 0, 1))?;
+        let image_t = (image_t.unsqueeze(0)?.to_dtype(DType::F32)? * (1. / 255.))?;
         let pred = self.model.forward(&image_t)?.squeeze(0)?;
-        let inference_duration = Instant::now().duration_since(start_inference_time);
         let bboxes = from_tensor_to_bbox(&pred, self.confidence_threshold, self.nms_threshold)?;
+        let inference_duration = Instant::now().duration_since(start_inference_time);
+        debug!("Inference time: {:#?}", inference_duration);
+        let processing_duration = Instant::now().duration_since(start_processing_time);
+        debug!("Processing time: {:#?}", processing_duration);
         Ok((
             (
                 bboxes,
@@ -166,6 +157,7 @@ impl Detector {
                 (h as f32 / height as f32),
             ),
             inference_duration,
+            processing_duration,
         ))
     }
 
@@ -183,10 +175,7 @@ pub fn from_tensor_to_bbox(
     confidence_threshold: f32,
     nms_threshold: f32,
 ) -> anyhow::Result<Vec<Vec<Bbox<Vec<KeyPoint>>>>> {
-    let from_tensor_start_time = Instant::now();
     let pred = pred.to_device(&Device::Cpu)?;
-    let from_tensor_time = Instant::now().duration_since(from_tensor_start_time);
-    debug!("From tensor time: {:#?}", from_tensor_time);
 
     let bb_start_time = Instant::now();
     let (pred_size, npreds) = pred.dims2()?;
