@@ -46,3 +46,7 @@ zune-core = "0"
 [target.'cfg(windows)'.dependencies]
 ansi_term = "0"
 windows-service = "0"
+
+[target.'cfg(windows)'.bin]
+name = "blue_candle_service"
+path = "src/bin/blue_candle_service.rs"
