@@ -24,6 +24,7 @@ use std::{
     time::Instant,
 };
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, Level};
 use uuid::Uuid;
 
@@ -35,7 +36,11 @@ struct ServerState {
     stats: Mutex<ServerStats>,
 }
 
-pub async fn run_server(port: u16, detector: Detector) -> anyhow::Result<()> {
+pub async fn run_server(
+    port: u16,
+    detector: Detector,
+    cancellation_token: CancellationToken,
+) -> anyhow::Result<()> {
     let (_, inference_time, processing_time) = detector.test_detection()?;
     info!(
         "Server inference startup test, processing time: {:#?}, inference time: {:#?}",
@@ -55,7 +60,11 @@ pub async fn run_server(port: u16, detector: Detector) -> anyhow::Result<()> {
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
     info!("Starting server, listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, blue_candle.into_make_service()).await?;
+    axum::serve(listener, blue_candle.into_make_service())
+        .with_graceful_shutdown(async move {
+            cancellation_token.cancelled().await;
+        })
+        .await?;
 
     Ok(())
 }
