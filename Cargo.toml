@@ -33,6 +33,7 @@ tokio = { version = "1", features = [
     "io-util",
     "macros",
     "rt-multi-thread",
+    "signal",
     "sync"
 ] }
 tokio-util = { version = "0", features = ["codec"] }

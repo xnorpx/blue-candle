@@ -10,6 +10,7 @@ use candle_core as candle;
 use clap::Parser;
 use image::ImageReader;
 use std::{env, io::Cursor, time::Instant};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, Level};
 
 #[derive(Parser, Debug, Clone)]
@@ -162,8 +163,18 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
 
+        let cancellation_token = CancellationToken::new();
+        let ctrl_c_token = cancellation_token.clone();
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for Ctrl+C");
+            info!("Ctrl+C received, shutting down server");
+            ctrl_c_token.cancel();
+        });
+
         match args.image.clone() {
-            None => run_server(args.port, detector).await?,
+            None => run_server(args.port, detector, cancellation_token).await?,
             Some(image) => test_image(image, args, detector).await?,
         };
         Ok(())
