@@ -16,7 +16,7 @@ axum = { version = "0", features = ["multipart"] }
 candle-core = "0"
 candle-nn = "0"
 clap = { version = "4", features = ["derive"] }
-fast_image_resize = "4"
+fast_image_resize = "5"
 futures = "0"
 hf-hub = { version = "0", features = ["tokio"] }
 image = "0"
