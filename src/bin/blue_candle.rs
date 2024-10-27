@@ -17,12 +17,12 @@ use tracing::{debug, info, Level};
 #[command(author = "Marcus Asteborg", version=env!("CARGO_PKG_VERSION"))]
 pub struct Args {
     /// Filters the results to include only the specified labels. Provide labels separated by spaces.
-    /// Example: --labels "person,cup"
+    /// Example: --labels "person cup"
     #[arg(long, value_delimiter = ' ', num_args = 1..)]
     pub labels: Vec<String>,
 
     /// The port on which the server will listen for HTTP requests.
-    /// Default is 32168. Example usage: --port 8080
+    /// Default is 32168. Example usage: --port 1337
     //#[arg(long, default_value_t = 32168)]
     #[arg(long, default_value_t = 32168)]
     pub port: u16,
