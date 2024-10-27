@@ -76,7 +76,7 @@ Our goal with Blue Candle is to provide an accessible, user-friendly, and effici
 ### Command Line Interface (CLI) Options
 
 - **Labels Filter:**
-  - Use `--labels "label1,label2"` to filter results to include only specified labels.
+  - Use `--labels "label1 label2"` to filter results to include only specified labels.
 
 - **Port Selection:**
   - Use `--port [PORT_NUMBER]` to set the port for HTTP requests. Default is 32168.
@@ -108,10 +108,10 @@ Our goal with Blue Candle is to provide an accessible, user-friendly, and effici
 ### Example Command
 
 ```bash
-blue_candle --port 8080 --labels "person,car" --model "/path/to/model.safetensors" --image "/path/to/test.jpg"
+blue_candle --port 1337 --labels "person car" --model "/path/to/model.safetensors" --image "/path/to/test.jpg"
 ```
 
-This command runs Blue Candle on port 8080, filtering results to include only "person" and "car" labels, using a specified model, and processing a specific test image.
+This command runs Blue Candle on port 1337, filtering results to include only "person" and "car" labels, using a specified model, and processing a specific test image.
 
 ---
 
