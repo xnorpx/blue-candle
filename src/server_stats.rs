@@ -25,7 +25,7 @@ impl ServerStats {
         now: Instant,
         request_time: Duration,
         processing_time: Duration,
-        inferece_time: Duration,
+        inference_time: Duration,
     ) {
         if now.duration_since(self.last_log_time) >= STAT_SUMMARY_INTERVAL
             && !self.request_times.is_empty()
@@ -55,8 +55,8 @@ impl ServerStats {
             self.last_log_time = now;
         }
 
-        self.max_inference_time = self.max_inference_time.max(inferece_time);
-        self.min_inference_time = self.min_inference_time.min(inferece_time);
+        self.max_inference_time = self.max_inference_time.max(inference_time);
+        self.min_inference_time = self.min_inference_time.min(inference_time);
 
         self.max_processing_time = self.max_processing_time.max(processing_time);
         self.min_processing_time = self.min_processing_time.min(processing_time);
