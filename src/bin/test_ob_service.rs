@@ -22,7 +22,7 @@ struct Args {
     image: Option<String>,
 
     /// Save image with boundary bbox
-    #[clap(short, long)]
+    #[clap(short = 'I', long)]
     image_ob: Option<String>,
 
     /// Number of requests to make
