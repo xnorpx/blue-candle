@@ -1,20 +1,24 @@
 use crate::{
-    api::{Prediction, VisionDetectionRequest, VisionDetectionResponse},
+    api::{
+        Prediction, StatusUpdateResponse, VersionInfo, VisionCustomListResponse,
+        VisionDetectionRequest, VisionDetectionResponse,
+    },
     coco_classes,
     detector::{Bbox, Detector, InferenceTime, KeyPoint, ProcessingTime},
     server_stats::ServerStats,
     utils::{img_with_bbox, save_image},
 };
 use axum::{
-    extract::Multipart,
-    extract::{DefaultBodyLimit, State},
-    http::StatusCode,
+    body::{self, Body},
+    extract::{DefaultBodyLimit, Multipart, State},
+    http::{Request, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use candle::utils::cuda_is_available;
 use candle_core as candle;
+use chrono::Utc;
 use clap::ValueEnum;
 use image::ImageReader;
 use std::{
@@ -25,7 +29,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, Level};
+use tracing::{debug, info, warn, Level};
 use uuid::Uuid;
 
 const MEGABYTE: usize = 1024 * 1024; // 1 MB = 1024 * 1024 bytes
@@ -53,8 +57,18 @@ pub async fn run_server(
     });
 
     let blue_candle = Router::new()
+        .route(
+            "/",
+            get(|| async { (StatusCode::OK, "Blue Candle is alive and healthy") }),
+        )
+        .route(
+            "/v1/status/updateavailable",
+            get(v1_status_update_available),
+        )
         .route("/v1/vision/detection", post(v1_vision_detection))
         .with_state(server_state.clone())
+        .route("/v1/vision/custom/list", post(v1_vision_custom_list))
+        .fallback(fallback_handler)
         .layer(DefaultBodyLimit::max(THIRTY_MEGABYTES));
 
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
@@ -164,6 +178,36 @@ async fn v1_vision_detection(
     Ok(Json(response))
 }
 
+async fn v1_status_update_available() -> Result<Json<StatusUpdateResponse>, BlueCandleError> {
+    let response = StatusUpdateResponse {
+        success: true,
+        message: "".to_string(),
+        version: None,
+        current: VersionInfo::default(),
+        latest: VersionInfo::default(),
+        updateAvailable: false, // Always respond that no update is available
+    };
+
+    Ok(Json(response))
+}
+
+async fn v1_vision_custom_list() -> Result<Json<VisionCustomListResponse>, BlueCandleError> {
+    let response = VisionCustomListResponse {
+        success: true,
+        models: vec![],
+        moduleId: "".to_string(),
+        moduleName: "".to_string(),
+        command: "list".to_string(),
+        statusData: None,
+        inferenceDevice: "CPU".to_string(),
+        analysisRoundTripMs: 0,
+        processedBy: "BlueCandle".to_string(),
+        timestampUTC: Utc::now().to_rfc3339(),
+    };
+
+    Ok(Json(response))
+}
+
 struct BlueCandleError(anyhow::Error);
 
 impl IntoResponse for BlueCandleError {
@@ -187,6 +231,23 @@ impl IntoResponse for BlueCandleError {
         )
             .into_response()
     }
+}
+
+async fn fallback_handler(req: Request<Body>) -> impl IntoResponse {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let headers = req.headers().clone();
+
+    let body_bytes = body::to_bytes(req.into_body(), usize::MAX)
+        .await
+        .unwrap_or_else(|_| body::Bytes::new());
+
+    warn!(
+        "Unimplemented endpoint called: Method: {}, URI: {}, Headers: {:?}, Body: {:?}",
+        method, uri, headers, body_bytes
+    );
+
+    (StatusCode::NOT_FOUND, "Endpoint not implemented")
 }
 
 impl<E> From<E> for BlueCandleError

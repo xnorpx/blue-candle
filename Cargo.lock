@@ -351,6 +351,7 @@ dependencies = [
  "axum",
  "candle-core",
  "candle-nn",
+ "chrono",
  "clap",
  "fast_image_resize",
  "futures",

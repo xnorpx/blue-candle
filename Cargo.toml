@@ -15,6 +15,7 @@ anyhow = "1"
 axum = { version = "0", features = ["multipart"] }
 candle-core = "0"
 candle-nn = "0"
+chrono = "0"
 clap = { version = "4", features = ["derive"] }
 fast_image_resize = "5"
 futures = "0"
@@ -34,7 +35,7 @@ tokio = { version = "1", features = [
     "macros",
     "rt-multi-thread",
     "signal",
-    "sync"
+    "sync",
 ] }
 tokio-util = { version = "0", features = ["codec"] }
 tracing = "0"
