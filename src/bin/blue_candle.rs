@@ -79,11 +79,11 @@ pub struct Args {
     pub test: bool,
 
     /// Sets a custom file path for logging
-    #[clap(short, long, value_parser)]
+    #[clap(long, value_parser)]
     log_path: Option<String>,
 
     /// Sets the level of logging
-    #[clap(short, long, value_enum, default_value_t = LogLevel::Info)]
+    #[clap(long, value_enum, default_value_t = LogLevel::Info)]
     log_level: LogLevel,
 
     /// Max blocking threads, max will be number of cores of the system
