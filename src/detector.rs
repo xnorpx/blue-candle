@@ -24,6 +24,16 @@ pub type Bboxes = Vec<Vec<Bbox<Vec<KeyPoint>>>>;
 pub type ProcessingTime = Duration;
 pub type InferenceTime = Duration;
 
+#[derive(Clone)]
+pub struct DetectorConfig {
+    pub force_cpu: bool,
+    pub model: Option<String>,
+    pub confidence_threshold: f32,
+    pub nms_threshold: f32,
+    pub labels: Vec<String>,
+    pub image_path: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Detector {
     device: Device,
@@ -36,17 +46,19 @@ pub struct Detector {
 }
 
 impl Detector {
-    pub fn new(
-        force_cpu: bool,
-        model: Option<String>,
-        confidence_threshold: f32,
-        nms_threshold: f32,
-        labels: Vec<String>,
-        image_path: Option<String>,
-    ) -> anyhow::Result<Self> {
+    pub fn new(detector_config: DetectorConfig) -> anyhow::Result<Self> {
+        let DetectorConfig {
+            force_cpu,
+            model,
+            confidence_threshold,
+            nms_threshold,
+            labels,
+            image_path,
+        } = detector_config;
+
         let (device, gpu) = if !force_cpu && cuda_is_available() {
             info!("Detector is initialized for GPU");
-            (Device::new_cuda(0)?, true)
+            (Device::new_cuda_with_stream(0)?, true)
         } else {
             info!(
                 "Detector is initialized for CPU with mkl: {:?}, with avx: {:?} with f16c: {:?}",

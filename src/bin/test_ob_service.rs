@@ -1,5 +1,6 @@
 use blue_candle::{api::VisionDetectionResponse, detector::BIKE_IMAGE_BYTES};
 use clap::Parser;
+use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::{multipart, Body, Client};
 use std::time::{Duration, Instant};
 use tokio::fs::File;
@@ -40,6 +41,16 @@ async fn main() -> anyhow::Result<()> {
 
     let mut futures = Vec::with_capacity(args.number_of_requests as usize);
 
+    let pb = ProgressBar::new(args.number_of_requests as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+            )
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
     let start_time = Instant::now();
     for i in 0..args.number_of_requests {
         let image = args.image.clone();
@@ -50,11 +61,13 @@ async fn main() -> anyhow::Result<()> {
             image,
             min_confidence,
         )));
+        pb.inc(1);
         if i < args.number_of_requests - 1 {
             tokio::time::sleep(std::time::Duration::from_millis(args.interval)).await;
         }
     }
     let results = futures::future::join_all(futures).await;
+    pb.finish_with_message("All requests completed!");
     let runtime_duration = Instant::now().duration_since(start_time);
     let mut request_times: Vec<Duration> = Vec::with_capacity(args.number_of_requests as usize);
 

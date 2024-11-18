@@ -358,6 +358,7 @@ dependencies = [
  "hf-hub",
  "image",
  "imageproc",
+ "indicatif",
  "intel-mkl-src",
  "num_cpus",
  "nvml-wrapper",

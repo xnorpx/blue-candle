@@ -1,7 +1,7 @@
 use blue_candle::{
     coco_classes,
-    detector::{Detector, BIKE_IMAGE_BYTES},
-    server::{from_bbox_to_predictions, run_server, LogLevel},
+    detector::{Detector, DetectorConfig, BIKE_IMAGE_BYTES},
+    server::{run_server, LogLevel},
     system_info,
     utils::{download_models, ensure_directory_exists, img_with_bbox, read_jpeg_file, save_image},
 };
@@ -123,15 +123,17 @@ fn main() -> anyhow::Result<()> {
     system_info::cpu_info()?;
     let num_cores = num_cpus::get();
 
-    let mut blocking_threads = if !args.cpu && cuda_is_available() {
+    if !args.cpu && cuda_is_available() {
         system_info::cuda_gpu_info()?;
-        args.blocking_threads.unwrap_or(1)
     } else {
         // Run CPU inference on one core
         env::set_var("RAYON_NUM_THREADS", "1");
-        args.blocking_threads.unwrap_or(num_cores - 1)
     };
-    blocking_threads = blocking_threads.clamp(1, num_cores - 1);
+
+    let blocking_threads = args
+        .blocking_threads
+        .unwrap_or(num_cores - 1)
+        .clamp(1, num_cores - 1);
 
     // Configure Tokio
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -142,14 +144,14 @@ fn main() -> anyhow::Result<()> {
 
     debug!("Tokio initilized with {blocking_threads} blocking threads.");
 
-    let detector = Detector::new(
-        args.cpu,
-        args.model.clone(),
-        args.confidence_threshold,
-        args.nms_threshold,
-        args.labels.clone(),
-        args.image_path.clone(),
-    )?;
+    let detector_config = DetectorConfig {
+        force_cpu: args.cpu,
+        model: args.model.clone(),
+        confidence_threshold: args.confidence_threshold,
+        nms_threshold: args.nms_threshold,
+        labels: args.labels.clone(),
+        image_path: args.image_path.clone(),
+    };
 
     rt.block_on(async {
         ensure_directory_exists(args.image_path.clone()).await?;
@@ -158,10 +160,10 @@ fn main() -> anyhow::Result<()> {
             download_models(model_path).await?;
             return Ok(());
         }
-        if args.test {
-            test(detector, args).await?;
-            return Ok(());
-        }
+        // if args.test {
+        //     test(detector, args).await?;
+        //     return Ok(());
+        // }
 
         let cancellation_token = CancellationToken::new();
         let ctrl_c_token = cancellation_token.clone();
@@ -173,62 +175,69 @@ fn main() -> anyhow::Result<()> {
             ctrl_c_token.cancel();
         });
 
-        match args.image.clone() {
-            None => run_server(args.port, detector, cancellation_token).await?,
-            Some(image) => test_image(image, args, detector).await?,
-        };
+        run_server(
+            args.port,
+            blocking_threads,
+            detector_config,
+            cancellation_token,
+        )
+        .await?;
+        // match args.image.clone() {
+        //     None => run_server(args.port, detector, cancellation_token).await?,
+        //     // Some(image) => test_image(image, args, detector).await?,
+        // };
         Ok(())
     })
 }
 
-async fn test_image(image: String, args: Args, detector: Detector) -> anyhow::Result<()> {
-    let start_test_time = Instant::now();
-    let contents = read_jpeg_file(image.clone()).await?;
+// async fn test_image(image: String, args: Args, detector: Detector) -> anyhow::Result<()> {
+//     let start_test_time = Instant::now();
+//     let contents = read_jpeg_file(image.clone()).await?;
 
-    let (bboxes, inference_time, processing_time) = detector.detect(&contents)?;
+//     let (bboxes, inference_time, processing_time) = detector.detect(&contents)?;
 
-    let predictions =
-        from_bbox_to_predictions(bboxes, 0.5, &coco_classes::NAMES, detector.labels());
+//     let predictions =
+//         from_bbox_to_predictions(bboxes, 0.5, &coco_classes::NAMES, detector.labels());
 
-    let reader = ImageReader::new(Cursor::new(contents.as_ref()))
-        .with_guessed_format()
-        .expect("Cursor io never fails");
-    let img = img_with_bbox(predictions, reader, args.legend_size)?;
+//     let reader = ImageReader::new(Cursor::new(contents.as_ref()))
+//         .with_guessed_format()
+//         .expect("Cursor io never fails");
+//     let img = img_with_bbox(predictions, reader, args.legend_size)?;
 
-    save_image(img, image, "-od").await?;
-    let test_time = Instant::now().duration_since(start_test_time);
+//     save_image(img, image, "-od").await?;
+//     let test_time = Instant::now().duration_since(start_test_time);
 
-    info!(
-        "Tested image in {:#?}, processing time: {:#?}, inference time: {:#?}",
-        test_time, processing_time, inference_time
-    );
+//     info!(
+//         "Tested image in {:#?}, processing time: {:#?}, inference time: {:#?}",
+//         test_time, processing_time, inference_time
+//     );
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-async fn test(detector: Detector, args: Args) -> anyhow::Result<()> {
-    let start_test_time = Instant::now();
-    let (bboxes, inference_time, processing_time) = detector.test_detection()?;
-    let predictions = from_bbox_to_predictions(
-        bboxes,
-        args.confidence_threshold,
-        &coco_classes::NAMES,
-        detector.labels(),
-    );
-    let reader = ImageReader::new(Cursor::new(BIKE_IMAGE_BYTES))
-        .with_guessed_format()
-        .expect("Cursor io never fails");
-    let img = img_with_bbox(predictions.clone(), reader, 30)?;
-    // The api doesn't provide a source id or a source name so we just generate a uuid here.
-    save_image(img, "test.jpg".into(), "").await?;
-    let test_time = Instant::now().duration_since(start_test_time);
+// async fn test(detector: Detector, args: Args) -> anyhow::Result<()> {
+//     let start_test_time = Instant::now();
+//     let (bboxes, inference_time, processing_time) = detector.test_detection()?;
+//     let predictions = from_bbox_to_predictions(
+//         bboxes,
+//         args.confidence_threshold,
+//         &coco_classes::NAMES,
+//         detector.labels(),
+//     );
+//     let reader = ImageReader::new(Cursor::new(BIKE_IMAGE_BYTES))
+//         .with_guessed_format()
+//         .expect("Cursor io never fails");
+//     let img = img_with_bbox(predictions.clone(), reader, 30)?;
+//     // The api doesn't provide a source id or a source name so we just generate a uuid here.
+//     save_image(img, "test.jpg".into(), "").await?;
+//     let test_time = Instant::now().duration_since(start_test_time);
 
-    info!(
-        "Tested image in {:#?}, processing time: {:#?}, inference time: {:#?}",
-        test_time, processing_time, inference_time
-    );
-    Ok(())
-}
+//     info!(
+//         "Tested image in {:#?}, processing time: {:#?}, inference time: {:#?}",
+//         test_time, processing_time, inference_time
+//     );
+//     Ok(())
+// }
 
 fn setup_ansi_support() {
     #[cfg(target_os = "windows")]
