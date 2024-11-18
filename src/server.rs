@@ -29,7 +29,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn, Level};
+use tracing::{debug, error, info, warn, Level};
 use uuid::Uuid;
 
 const MEGABYTE: usize = 1024 * 1024; // 1 MB = 1024 * 1024 bytes
@@ -73,7 +73,15 @@ pub async fn run_server(
 
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
     info!("Starting server, listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            error!("Looks like {port} is already in use either by Blue candle, CPAI or another application, please turn off the other application or pick another port with --port");
+            return Err(e.into());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
     axum::serve(listener, blue_candle.into_make_service())
         .with_graceful_shutdown(async move {
             cancellation_token.cancelled().await;
