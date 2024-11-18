@@ -47,3 +47,45 @@ pub struct Prediction {
     pub confidence: f32,
     pub label: String,
 }
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct VisionCustomListResponse {
+    pub success: bool,
+    pub models: Vec<String>,
+    pub moduleId: String,
+    pub moduleName: String,
+    pub command: String,
+    pub statusData: Option<String>,
+    pub inferenceDevice: String,
+    pub analysisRoundTripMs: i32,
+    pub processedBy: String,
+    pub timestampUTC: String,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusUpdateResponse {
+    pub success: bool,
+    pub message: String,
+    pub version: Option<VersionInfo>, // Deprecated field
+    pub current: VersionInfo,
+    pub latest: VersionInfo,
+    pub updateAvailable: bool,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionInfo {
+    pub major: u8,
+    pub minor: u8,
+    pub patch: u8,
+    pub preRelease: Option<String>,
+    pub securityUpdate: bool,
+    pub build: u32,
+    pub file: String,
+    pub releaseNotes: String,
+}
